@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -16,20 +17,22 @@ from tradingagents.quant.barra_risk_factors import (
     barra_factor_attribution,
     load_barra_factor_returns,
 )
-from tradingagents.quant.live_execution import build_live_execution_snapshot
-from tradingagents.quant.live_strategies import collect_strategy_returns
-from tradingagents.quant.polymarket_strategy import StrategyConfig, load_universe_prices
+from tradingagents.quant.live_execution import build_live_composite_returns, build_live_execution_snapshot
+from tradingagents.quant.live_strategies import collect_strategy_returns, fetch_live_data_bundle
 from tradingagents.quant.strategy_catalog import DASHBOARD_VERSION, STRATEGY_CATALOG, StrategySpec
 from tradingagents.quant.whale_strategy import daily_whale_flow, strategy_metrics
-from tradingagents.dataflows.polymarket_whale import (
-    DEFAULT_CONDITION_IDS,
-    fetch_large_trades_history,
-    fetch_market_meta,
-)
 
 NY = ZoneInfo("America/New_York")
 DEFAULT_SLUG = "gta-vi-released-before-june-2026"
 MAX_EQUITY_POINTS = 500
+
+
+def _lookback_days() -> int:
+    raw = os.environ.get("LIVE_LOOKBACK_DAYS", "400").strip()
+    try:
+        return max(60, int(raw))
+    except ValueError:
+        return 400
 
 
 def _downsample_equity(cum: pd.Series, max_points: int = MAX_EQUITY_POINTS) -> list[dict]:
@@ -62,38 +65,75 @@ def _attribution_rows(attr: pd.DataFrame, top_n: int = 12) -> list[dict]:
     return rows
 
 
+def _tab_from_returns(spec: StrategySpec, r: pd.Series, barra: pd.DataFrame) -> dict:
+    r = r.dropna()
+    m = strategy_metrics(r)
+    attr = barra_factor_attribution(r, barra) if not barra.empty else pd.DataFrame()
+    r2 = float(attr.attrs.get("r_squared", 0)) if not attr.empty else 0.0
+    cum = (1 + r.fillna(0)).cumprod()
+    return {
+        "spec": spec,
+        "data_ok": True,
+        "data_error": None,
+        "returns": r,
+        "metrics": m,
+        "attribution": attr,
+        "r2": r2,
+        "equity": _downsample_equity(cum),
+        "factors": _attribution_rows(attr),
+    }
+
+
+def _placeholder_tab(spec: StrategySpec, error: str | None) -> dict:
+    return {
+        "spec": spec,
+        "data_ok": False,
+        "data_error": error or "data unavailable",
+        "returns": pd.Series(dtype=float),
+        "metrics": strategy_metrics(pd.Series(dtype=float)),
+        "attribution": pd.DataFrame(),
+        "r2": 0.0,
+        "equity": [],
+        "factors": [],
+    }
+
+
+def _resolve_returns(spec: StrategySpec, returns_map: dict[str, pd.Series]) -> pd.Series | None:
+    r = returns_map.get(spec.id)
+    if r is not None and not r.dropna().empty:
+        return r
+    if spec.id != "live_composite":
+        return None
+    wr = returns_map.get("whale_flow")
+    pr = returns_map.get("pairs_stat_arb")
+    if wr is None or pr is None or wr.dropna().empty or pr.dropna().empty:
+        return None
+    comp = build_live_composite_returns(wr, pr).dropna()
+    return comp if len(comp) else None
+
+
 def build_strategy_tab_results(
     start: str,
     end: str,
     slug: str = DEFAULT_SLUG,
-) -> tuple[list[dict], pd.DataFrame]:
-    """Same attribution loop as multi-strategy PNG; returns rich dicts + barra frame."""
-    returns_map = collect_strategy_returns(start, end, slug)
+    bundle: dict | None = None,
+) -> tuple[list[dict], pd.DataFrame, dict[str, str]]:
+    """Build one tab per catalog entry; placeholders when a leg fails."""
+    if bundle is None:
+        bundle = fetch_live_data_bundle(start, end, slug)
+    returns_map, errors = collect_strategy_returns(start, end, slug, bundle=bundle)
     barra = load_barra_factor_returns(start, end)
     results: list[dict] = []
     for spec in STRATEGY_CATALOG:
-        r = returns_map.get(spec.id)
-        if r is None or r.dropna().empty:
-            if not spec.runnable:
-                continue
+        if not spec.runnable:
             continue
-        r = r.dropna()
-        m = strategy_metrics(r)
-        attr = barra_factor_attribution(r, barra) if not barra.empty else pd.DataFrame()
-        r2 = float(attr.attrs.get("r_squared", 0)) if not attr.empty else 0.0
-        cum = (1 + r.fillna(0)).cumprod()
-        results.append(
-            {
-                "spec": spec,
-                "returns": r,
-                "metrics": m,
-                "attribution": attr,
-                "r2": r2,
-                "equity": _downsample_equity(cum),
-                "factors": _attribution_rows(attr),
-            }
-        )
-    return results, barra
+        r = _resolve_returns(spec, returns_map)
+        if r is None:
+            err = errors.get(spec.id) or errors.get("whale_flow") or errors.get("pairs_stat_arb")
+            results.append(_placeholder_tab(spec, err))
+            continue
+        results.append(_tab_from_returns(spec, r, barra))
+    return results, barra, errors
 
 
 def _spec_json(spec: StrategySpec) -> dict:
@@ -109,68 +149,24 @@ def _spec_json(spec: StrategySpec) -> dict:
 
 
 def build_live_payload(
-    lookback_days: int = 400,
+    lookback_days: int | None = None,
     slug: str = DEFAULT_SLUG,
 ) -> dict:
+    if lookback_days is None:
+        lookback_days = _lookback_days()
     now = datetime.now(NY)
     end = now.strftime("%Y-%m-%d")
     start = (now - pd.Timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     as_of = now.strftime("%Y-%m-%d %H:%M %Z")
 
-    tab_results, barra = build_strategy_tab_results(start, end, slug)
-    ids = {res["spec"].id for res in tab_results}
-    if "live_composite" not in ids:
-        wm = {r["spec"].id: r for r in tab_results}
-        if "whale_flow" in wm and "pairs_stat_arb" in wm:
-            from tradingagents.quant.live_execution import build_live_composite_returns
-
-            wr = wm["whale_flow"]["returns"]
-            pr = wm["pairs_stat_arb"]["returns"]
-            comp = build_live_composite_returns(wr, pr).dropna()
-            if len(comp):
-                spec = next(s for s in STRATEGY_CATALOG if s.id == "live_composite")
-                m = strategy_metrics(comp)
-                attr = barra_factor_attribution(comp, barra) if not barra.empty else pd.DataFrame()
-                r2 = float(attr.attrs.get("r_squared", 0)) if not attr.empty else 0.0
-                cum = (1 + comp.fillna(0)).cumprod()
-                tab_results.insert(
-                    0,
-                    {
-                        "spec": spec,
-                        "returns": comp,
-                        "metrics": m,
-                        "attribution": attr,
-                        "r2": r2,
-                        "equity": _downsample_equity(cum),
-                        "factors": _attribution_rows(attr),
-                    },
-                )
-
-    cfg = StrategyConfig(start=start, end=end)
-    prices = load_universe_prices(cfg)
-    meta = fetch_market_meta(slug) or {}
-    cid = meta.get("conditionId") or DEFAULT_CONDITION_IDS.get(slug, "")
-    trades = fetch_large_trades_history(
-        min_cash_usd=500, market_slug=slug, condition_id=cid or None, max_trades=8000
-    )
-    ohlcv_start = start
-    from tradingagents.dataflows.polymarket_gamma import fetch_polymarket_daily_ohlcv
-
-    ohlcv = fetch_polymarket_daily_ohlcv(slug, ohlcv_start, end)
-    poly = ohlcv["Close"].dropna() if not ohlcv.empty else pd.Series(dtype=float)
-    if poly.empty and not trades.empty:
-        from tradingagents.quant.live_strategies import _prob_from_trades
-
-        poly = _prob_from_trades(trades)
-    if len(poly):
-        poly.index = pd.to_datetime(poly.index).tz_localize(None).normalize()
-    flow = daily_whale_flow(trades).reindex(poly.index).fillna(0) if len(trades) and len(poly) else pd.DataFrame()
+    bundle = fetch_live_data_bundle(start, end, slug)
+    tab_results, barra, fetch_errors = build_strategy_tab_results(start, end, slug, bundle=bundle)
 
     exec_snap = build_live_execution_snapshot(
-        flow,
-        poly,
-        prices.get("DOGE"),
-        prices.get("WIF"),
+        bundle["flow"],
+        bundle["poly"],
+        bundle["prices"].get("DOGE"),
+        bundle["prices"].get("WIF"),
         notional_usd=100.0,
     )
     sig = exec_snap["signals"]
@@ -190,24 +186,31 @@ def build_live_payload(
     for res in tab_results:
         spec: StrategySpec = res["spec"]
         m = res["metrics"]
-        strategies.append(
-            {
-                **_spec_json(spec),
-                "metrics": {
-                    "win_rate": round(float(m.get("win_rate", 0)), 4),
-                    "sharpe": round(float(m.get("sharpe", 0)), 4),
-                    "cagr": round(float(m.get("cagr", 0)), 4),
-                    "total_return": round(float(m.get("total_return", 0)), 4),
-                    "max_dd": round(float(m.get("max_dd", 0)), 4),
-                },
-                "r2_barra": round(float(res.get("r2", 0)), 4),
-                "equity": res["equity"],
-                "factors": res["factors"],
-                "start": str(res["returns"].index.min().date()),
-                "end": str(res["returns"].index.max().date()),
-                "n_days": int(len(res["returns"])),
-            }
-        )
+        data_ok = bool(res.get("data_ok", True))
+        entry = {
+            **_spec_json(spec),
+            "data_ok": data_ok,
+            "data_error": res.get("data_error"),
+            "metrics": {
+                "win_rate": round(float(m.get("win_rate", 0)), 4),
+                "sharpe": round(float(m.get("sharpe", 0)), 4),
+                "cagr": round(float(m.get("cagr", 0)), 4),
+                "total_return": round(float(m.get("total_return", 0)), 4),
+                "max_dd": round(float(m.get("max_dd", 0)), 4),
+            },
+            "r2_barra": round(float(res.get("r2", 0)), 4),
+            "equity": res["equity"],
+            "factors": res["factors"],
+        }
+        if data_ok and len(res["returns"]):
+            entry["start"] = str(res["returns"].index.min().date())
+            entry["end"] = str(res["returns"].index.max().date())
+            entry["n_days"] = int(len(res["returns"]))
+        else:
+            entry["start"] = None
+            entry["end"] = None
+            entry["n_days"] = 0
+        strategies.append(entry)
 
     return {
         "dashboard_version": DASHBOARD_VERSION,
@@ -216,7 +219,9 @@ def build_live_payload(
         "slug": slug,
         "lookback_start": start,
         "lookback_end": end,
+        "catalog_ids": [s.id for s in STRATEGY_CATALOG if s.runnable],
         "strategies": strategies,
+        "fetch_errors": {k: v for k, v in fetch_errors.items() if v},
         "signals": {k: float(v) for k, v in sig.items()},
         "signals_raw": {k: float(v) for k, v in exec_snap["signals_raw"].items()},
         "whale_live": exec_snap["whale"],

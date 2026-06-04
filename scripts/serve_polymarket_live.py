@@ -15,6 +15,7 @@ import base64
 import json
 import os
 import sys
+import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -26,6 +27,16 @@ if REPO_ROOT not in sys.path:
 APP_DIR = os.path.join(REPO_ROOT, "assets", "dashboard_outputs", "live_app")
 DEFAULT_PORT = 8765
 PORT_SCAN = 10  # local only — cloud uses fixed PORT
+
+_LIVE_CACHE: dict = {"ts": 0.0, "payload": None}
+
+
+def _live_cache_ttl() -> int:
+    raw = os.environ.get("LIVE_CACHE_SECONDS", "0").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
 
 
 def _resolve_bind() -> tuple[str, int, bool]:
@@ -109,7 +120,15 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
             try:
                 from tradingagents.quant.live_dashboard_payload import build_live_payload
 
-                payload = build_live_payload()
+                ttl = _live_cache_ttl()
+                now = time.time()
+                if ttl > 0 and _LIVE_CACHE["payload"] is not None and now - _LIVE_CACHE["ts"] < ttl:
+                    payload = _LIVE_CACHE["payload"]
+                else:
+                    payload = build_live_payload()
+                    if ttl > 0:
+                        _LIVE_CACHE["ts"] = now
+                        _LIVE_CACHE["payload"] = payload
                 self._send_json(200, payload)
             except Exception as exc:
                 self._send_json(

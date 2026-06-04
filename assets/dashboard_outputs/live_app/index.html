@@ -194,7 +194,9 @@
     function visibleStrategies() {
       if (!payload || !payload.strategies) return [];
       const prod = payload.strategies.filter((s) => PROD_IDS.includes(s.id));
-      return prod.length >= 1 ? prod : payload.strategies;
+      if (prod.length >= PROD_IDS.length) return prod;
+      if (prod.length >= 1) return prod;
+      return payload.strategies;
     }
 
     function checkStale(data) {
@@ -372,6 +374,12 @@
       const ecb = (news.ecb || []).slice(0, 8);
       const fred = news.fred || [];
       const gateColor = gate.allow_new_trades ? "#00ff88" : "#ff4466";
+      const dataWarn =
+        s.data_ok === false
+          ? '<p class="desc" style="color:#ff8866">Data pending: ' +
+            (s.data_error || "refresh in a minute or check Render logs") +
+            "</p>"
+          : "";
 
       $("panel").innerHTML =
         '<div class="card">' +
@@ -380,6 +388,7 @@
         " <span style='color:#7a8899;font-weight:normal'>[" +
         s.id +
         "]</span></h2>" +
+        dataWarn +
         '<p class="desc">' +
         s.description +
         "</p>" +

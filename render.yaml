@@ -15,6 +15,12 @@ services:
         value: "0"
       - key: HOST
         value: 0.0.0.0
+      - key: LIVE_LOOKBACK_DAYS
+        value: "250"
+      - key: LIVE_MAX_TRADES
+        value: "4000"
+      - key: LIVE_CACHE_SECONDS
+        value: "90"
       # Optional password: username:password
       # - key: DASHBOARD_BASIC_AUTH
       #   sync: false

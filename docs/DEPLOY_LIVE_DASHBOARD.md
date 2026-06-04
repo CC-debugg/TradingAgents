@@ -23,6 +23,8 @@ Common fix: push latest `render.yaml` + `requirements-live-dashboard.txt`, then 
 | `DASHBOARD_BASIC_AUTH` | `username:password` — simple login wall |
 | `FRED_API_KEY` | Extra macro data in news panel |
 | `PUBLIC_BASE_URL` | Shown in startup logs |
+| `LIVE_LOOKBACK_DAYS` | Shorter history on free tier (default `250` on Render) |
+| `LIVE_MAX_TRADES` | Cap Polymarket trade fetch (default `4000` on Render) |
 
 **Never set on a public demo:** `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_LIVE=1`.
 

@@ -65,7 +65,7 @@ def main() -> int:
     print("=" * 65)
 
     print("\n[1/5] Latest prices & strategy returns ...")
-    returns_map = collect_strategy_returns(start, end, DEFAULT_SLUG)
+    returns_map, _ = collect_strategy_returns(start, end, DEFAULT_SLUG)
     barra = load_barra_factor_returns(start, end)
     print(f"    Strategies: {list(returns_map.keys())}")
 

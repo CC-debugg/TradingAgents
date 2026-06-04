@@ -168,7 +168,8 @@ def main() -> int:
     print("=" * 65)
 
     print("\n[1/3] Loading strategy returns + Barra ...")
-    results, barra = build_strategy_tab_results(start, end, DEFAULT_SLUG)
+    results, barra, _ = build_strategy_tab_results(start, end, DEFAULT_SLUG)
+    results = [r for r in results if r.get("data_ok", True)]
     print(f"    Tabs: {[r['spec'].id for r in results]}")
     print(f"    Barra factors: {list(barra.columns) if not barra.empty else []}")
 
