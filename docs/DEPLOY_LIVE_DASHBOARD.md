@@ -8,11 +8,13 @@ Share the interactive dashboard (`live_composite` + whale + pairs) with your tea
 
 ## Option A — Render.com (recommended, free tier)
 
-1. Push this repo to **GitHub**.
-2. Sign up at [render.com](https://render.com) → **New → Blueprint** → connect the repo.
-3. Render reads `render.yaml` and builds `Dockerfile.live-dashboard`.
-4. After deploy, open: `https://polymarket-live-dashboard.onrender.com/` (name may vary).
-5. First request after idle can take **30–60s** (free tier cold start).
+1. Push this repo to **GitHub** (your fork).
+2. [render.com](https://render.com) → **New → Blueprint** → select repo.
+3. Apply the blueprint (`render.yaml` uses **Python** runtime, not Docker).
+4. Open `https://polymarket-live-dashboard.onrender.com/` (name may vary).
+
+**If deploy failed:** Render dashboard → **polymarket-live-dashboard** → **Logs** (build + runtime).  
+Common fix: push latest `render.yaml` + `requirements-live-dashboard.txt`, then **Manual Deploy**.
 
 **Optional env vars (Render → Environment):**
 

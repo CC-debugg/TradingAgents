@@ -3,18 +3,18 @@
 services:
   - type: web
     name: polymarket-live-dashboard
-    runtime: docker
-    dockerfilePath: ./Dockerfile.live-dashboard
+    runtime: python
     plan: free
+    buildCommand: pip install -r requirements-live-dashboard.txt
+    startCommand: python scripts/serve_polymarket_live.py --public
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
       - key: POLYMARKET_LIVE
         value: "0"
       - key: HOST
         value: 0.0.0.0
-      # Optional password protection: user:password
+      # Optional password: username:password
       # - key: DASHBOARD_BASIC_AUTH
-      #   sync: false
-      # Optional FRED macro prints
-      # - key: FRED_API_KEY
       #   sync: false
