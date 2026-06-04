@@ -171,6 +171,7 @@
     <code>kill $(lsof -t -i:8765)</code> then
     <code>python scripts/polymarket_meme_run.py live-app</code> — then Cmd+Shift+R.
   </div>
+  <div id="dataWarn" style="display:none;background:#2a2418;color:#ffaa44;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d"></div>
   <main>
     <nav id="tabs"></nav>
     <section class="content" id="panel">
@@ -206,6 +207,27 @@
       $("staleWarn").style.display = stale ? "block" : "none";
     }
 
+    function checkDataWarn(data) {
+      const el = $("dataWarn");
+      const bad = (data.strategies || []).filter((s) => s.data_ok === false);
+      if (data.data_stale) {
+        el.style.display = "block";
+        el.innerHTML =
+          "Price feed blip — showing <b>last good snapshot</b>. Retry Refresh in 30s. " +
+          (data.refresh_errors ? JSON.stringify(data.refresh_errors) : "");
+        return;
+      }
+      if (bad.length) {
+        el.style.display = "block";
+        el.innerHTML =
+          "Some data failed to load (cloud rate limit). Click <b>Refresh now</b> again. " +
+          bad.map((s) => s.id + ": " + (s.data_error || "error")).join(" · ");
+        return;
+      }
+      el.style.display = "none";
+      el.innerHTML = "";
+    }
+
     function fmtPct(x) {
       if (x == null || Number.isNaN(x)) return "—";
       return (x * 100).toFixed(1) + "%";
@@ -230,6 +252,7 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         payload = data;
         checkStale(data);
+        checkDataWarn(data);
         $("asOf").textContent =
           "As of " + data.as_of_ny + " · v" + (data.dashboard_version || "?") +
           " · Universe: " + (data.universe || []).join(", ");

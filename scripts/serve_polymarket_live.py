@@ -39,6 +39,15 @@ def _live_cache_ttl() -> int:
         return 0
 
 
+def _payload_data_ok(payload: dict) -> bool:
+    strategies = payload.get("strategies") or []
+    if len(strategies) < 1:
+        return False
+    prod = [s for s in strategies if s.get("live_production")]
+    check = prod if prod else strategies
+    return all(s.get("data_ok", True) for s in check)
+
+
 def _resolve_bind() -> tuple[str, int, bool]:
     """Return (host, port, allow_port_scan)."""
     public = os.environ.get("PUBLIC", "").strip().lower() in ("1", "true", "yes")
@@ -125,10 +134,21 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
                 if ttl > 0 and _LIVE_CACHE["payload"] is not None and now - _LIVE_CACHE["ts"] < ttl:
                     payload = _LIVE_CACHE["payload"]
                 else:
-                    payload = build_live_payload()
-                    if ttl > 0:
-                        _LIVE_CACHE["ts"] = now
-                        _LIVE_CACHE["payload"] = payload
+                    fresh = build_live_payload()
+                    if _payload_data_ok(fresh):
+                        if ttl > 0:
+                            _LIVE_CACHE["ts"] = now
+                            _LIVE_CACHE["payload"] = fresh
+                        payload = fresh
+                    elif _LIVE_CACHE["payload"] is not None and _payload_data_ok(_LIVE_CACHE["payload"]):
+                        payload = dict(_LIVE_CACHE["payload"])
+                        payload["data_stale"] = True
+                        payload["refresh_errors"] = fresh.get("fetch_errors") or {}
+                    else:
+                        if ttl > 0:
+                            _LIVE_CACHE["ts"] = now
+                            _LIVE_CACHE["payload"] = fresh
+                        payload = fresh
                 self._send_json(200, payload)
             except Exception as exc:
                 self._send_json(

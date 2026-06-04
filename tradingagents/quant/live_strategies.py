@@ -74,6 +74,9 @@ def fetch_live_data_bundle(
     prices: dict[str, pd.Series] = {}
     try:
         prices = load_universe_prices(cfg)
+        for sym in ("DOGE", "WIF"):
+            if sym not in prices:
+                errors[sym] = "price fetch failed (Yahoo/CoinGecko/Kraken); retry refresh"
     except Exception as exc:
         errors["prices"] = str(exc)
 

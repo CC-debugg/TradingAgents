@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
 from io import StringIO
 from typing import Any
@@ -32,9 +34,12 @@ class StrategyConfig:
 
 DEFAULT_UNIVERSE = [
     {"name": "POLY_GTA", "nautilus_symbol": "POLY:gta-vi-released-before-june-2026"},
-    {"name": "DOGE", "yfinance": "DOGE-USD", "coingecko_id": "dogecoin"},
-    {"name": "WIF", "yfinance": "WIF-USD", "coingecko_id": "dogwifcoin"},
+    {"name": "DOGE", "yfinance": "DOGE-USD", "coingecko_id": "dogecoin", "kraken": "DOGEUSD"},
+    {"name": "WIF", "yfinance": "WIF-USD", "coingecko_id": "dogwifcoin", "kraken": "WIFUSD"},
 ]
+
+_KRAKEN_OHLC = "https://api.kraken.com/0/public/OHLC"
+_HTTP_HEADERS = {"User-Agent": "TradingAgents-LiveDashboard/1.0"}
 
 
 def _to_series(x, name=None):
@@ -74,11 +79,50 @@ def _parse_csv_price_output(payload, name):
 
 def _fetch_yf_close(ticker, start, end):
     try:
+        from tradingagents.dataflows.stockstats_utils import yf_retry
         import yfinance as yf
 
-        s = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)["Close"]
-        s = _to_series(s, ticker).dropna()
+        t = yf.Ticker(ticker)
+        data = yf_retry(lambda: t.history(start=start, end=end, auto_adjust=True))
+        if data is None or data.empty or "Close" not in data.columns:
+            return None
+        s = _to_series(data["Close"], ticker).dropna()
+        if s.index.tz is not None:
+            s.index = s.index.tz_localize(None)
         return s if len(s) > 0 else None
+    except Exception:
+        return None
+
+
+def _fetch_coingecko_ohlc(coin_id, start, end, name):
+    if not coin_id:
+        return None
+    try:
+        import time
+
+        import requests
+
+        days = max(30, min(365, (pd.Timestamp(end) - pd.Timestamp(start)).days + 5))
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
+        for attempt in range(3):
+            r = requests.get(
+                url,
+                params={"vs_currency": "usd", "days": days},
+                timeout=25,
+                headers=_HTTP_HEADERS,
+            )
+            if r.status_code == 429 and attempt < 2:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            rows = r.json()
+            if not rows:
+                return None
+            idx = pd.to_datetime([row[0] for row in rows], unit="ms").floor("D")
+            closes = [float(row[4]) for row in rows]
+            s = pd.Series(closes, index=idx, name=name).sort_index()
+            s = s.loc[pd.Timestamp(start) : pd.Timestamp(end)]
+            return s.dropna() if len(s) else None
     except Exception:
         return None
 
@@ -87,24 +131,122 @@ def _fetch_coingecko_close(coin_id, start, end, name):
     if not coin_id:
         return None
     try:
+        import time
+
         import requests
 
         start_ts = int(pd.Timestamp(start).timestamp())
         end_ts = int((pd.Timestamp(end) + pd.Timedelta(days=1)).timestamp())
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart/range"
-        r = requests.get(
-            url, params={"vs_currency": "usd", "from": start_ts, "to": end_ts}, timeout=20
-        )
-        r.raise_for_status()
-        prices = r.json().get("prices", [])
-        if not prices:
-            return None
-        df = pd.DataFrame(prices, columns=["ts", "price"])
-        df["date"] = pd.to_datetime(df["ts"], unit="ms").dt.floor("D")
-        s = df.groupby("date")["price"].last().rename(name)
-        return s.sort_index().dropna() if len(s) else None
+        for attempt in range(3):
+            r = requests.get(
+                url,
+                params={"vs_currency": "usd", "from": start_ts, "to": end_ts},
+                timeout=25,
+                headers=_HTTP_HEADERS,
+            )
+            if r.status_code == 429 and attempt < 2:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            prices = r.json().get("prices", [])
+            if not prices:
+                return None
+            df = pd.DataFrame(prices, columns=["ts", "price"])
+            df["date"] = pd.to_datetime(df["ts"], unit="ms").dt.floor("D")
+            s = df.groupby("date")["price"].last().rename(name)
+            return s.sort_index().dropna() if len(s) else None
     except Exception:
         return None
+
+
+def _fetch_kraken_close(pair, start, end, name):
+    if not pair:
+        return None
+    try:
+        import requests
+
+        since = int(pd.Timestamp(start).timestamp())
+        r = requests.get(
+            _KRAKEN_OHLC,
+            params={"pair": pair, "interval": 1440, "since": since},
+            timeout=25,
+            headers=_HTTP_HEADERS,
+        )
+        r.raise_for_status()
+        payload = r.json()
+        if payload.get("error"):
+            return None
+        result = payload.get("result") or {}
+        ohlc_key = next((k for k in result if k != "last"), None)
+        if not ohlc_key:
+            return None
+        rows = result[ohlc_key]
+        idx = pd.to_datetime([row[0] for row in rows], unit="s").floor("D")
+        closes = [float(row[4]) for row in rows]
+        s = pd.Series(closes, index=idx, name=name).sort_index()
+        s = s.loc[pd.Timestamp(start) : pd.Timestamp(end)]
+        return s.dropna() if len(s) else None
+    except Exception:
+        return None
+
+
+def _price_cache_dir() -> str:
+    return os.environ.get("LIVE_PRICE_CACHE_DIR", "/tmp/ta_live_prices")
+
+
+def _read_price_cache(name: str, max_age_hours: int = 36) -> pd.Series | None:
+    path = os.path.join(_price_cache_dir(), f"{name}.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        age_h = (pd.Timestamp.utcnow().timestamp() - os.path.getmtime(path)) / 3600
+        if age_h > max_age_hours:
+            return None
+        with open(path, encoding="utf-8") as f:
+            obj = json.load(f)
+        idx = pd.to_datetime(obj["dates"])
+        s = pd.Series(obj["close"], index=idx, name=name).sort_index()
+        return s.dropna() if len(s) else None
+    except Exception:
+        return None
+
+
+def _write_price_cache(name: str, series: pd.Series) -> None:
+    try:
+        d = _price_cache_dir()
+        os.makedirs(d, exist_ok=True)
+        s = series.dropna().sort_index()
+        obj = {"dates": [str(x.date()) for x in s.index], "close": [float(v) for v in s.values]}
+        with open(os.path.join(d, f"{name}.json"), "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+    except Exception:
+        pass
+
+
+def _fetch_meme_close(item: dict[str, Any], start: str, end: str) -> pd.Series | None:
+    """Yahoo → CoinGecko OHLC → Kraken → disk cache (cloud-safe)."""
+    nm = item["name"]
+    s = None
+    if item.get("yfinance"):
+        s = _fetch_yf_close(item["yfinance"], start, end)
+    if s is None or len(s) < 20:
+        cg = _fetch_coingecko_ohlc(item.get("coingecko_id"), start, end, nm)
+        if cg is not None and len(cg) >= 20:
+            s = cg
+    if s is None or len(s) < 20:
+        cg2 = _fetch_coingecko_close(item.get("coingecko_id"), start, end, nm)
+        if cg2 is not None and len(cg2) >= 20:
+            s = cg2
+    if s is None or len(s) < 20:
+        kr = _fetch_kraken_close(item.get("kraken"), start, end, nm)
+        if kr is not None and len(kr) >= 20:
+            s = kr
+    if s is None or len(s) < 20:
+        s = _read_price_cache(nm)
+    if s is not None and len(s) >= 20:
+        _write_price_cache(nm, s)
+    return s
 
 
 def load_universe_prices(cfg: StrategyConfig) -> dict[str, pd.Series]:
@@ -118,9 +260,15 @@ def load_universe_prices(cfg: StrategyConfig) -> dict[str, pd.Series]:
             raw = get_nautilus_data_online(item["nautilus_symbol"], cfg.start, end)
             s = _parse_csv_price_output(raw, nm)
         if s is None and item.get("yfinance"):
-            s = _fetch_yf_close(item["yfinance"], cfg.start, end)
+            s = _fetch_meme_close(item, cfg.start, end)
+        if s is None and item.get("coingecko_id"):
+            s = _fetch_coingecko_ohlc(item["coingecko_id"], cfg.start, end, nm)
         if s is None:
             s = _fetch_coingecko_close(item.get("coingecko_id"), cfg.start, end, nm)
+        if s is None and item.get("kraken"):
+            s = _fetch_kraken_close(item["kraken"], cfg.start, end, nm)
+        if s is None and nm in ("DOGE", "WIF"):
+            s = _read_price_cache(nm)
         if s is not None:
             prices[nm] = _to_series(s, nm).ffill().dropna()
     return prices
