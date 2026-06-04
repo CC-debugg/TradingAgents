@@ -136,6 +136,112 @@ def build_strategy_tab_results(
     return results, barra, errors
 
 
+def _spot_snapshot(series: pd.Series | None, unit: str = "USD") -> dict:
+    if series is None or series.empty:
+        return {"price": None, "as_of": None, "chg_1d_pct": None, "unit": unit}
+    s = series.dropna().sort_index()
+    chg = None
+    if len(s) >= 2:
+        chg = round(float((s.iloc[-1] / s.iloc[-2] - 1) * 100), 2)
+    return {
+        "price": round(float(s.iloc[-1]), 6),
+        "as_of": str(s.index[-1].date()),
+        "chg_1d_pct": chg,
+        "unit": unit,
+    }
+
+
+def _build_assets_live(
+    bundle: dict,
+    exec_snap: dict,
+    slug: str,
+) -> list[dict]:
+    """Per-asset live prices, signals, and when-we-trade hints."""
+    poly = bundle.get("poly", pd.Series(dtype=float))
+    doge = bundle.get("prices", {}).get("DOGE")
+    wif = bundle.get("prices", {}).get("WIF")
+    whale = exec_snap.get("whale") or {}
+    pairs = exec_snap.get("pairs") or {}
+    sig = exec_snap.get("signals") or {}
+    raw = exec_snap.get("signals_raw") or {}
+    reasons = exec_snap.get("gate_reason") or {}
+    gate = exec_snap.get("news_gate") or {}
+
+    poly_snap = _spot_snapshot(poly, "prob")
+    if poly_snap["price"] is not None:
+        poly_snap["price_pct"] = round(poly_snap["price"] * 100, 2)
+
+    whale_blocks = [c["label"] for c in whale.get("checks", []) if not c.get("ok")]
+    pairs_blocks = [c["label"] for c in pairs.get("checks", []) if not c.get("ok")]
+
+    def _status(raw_sig: float, gated_sig: float, blocks: list[str]) -> str:
+        if not gate.get("allow_new_trades", True):
+            return "blocked_macro"
+        if abs(gated_sig) > 0.01:
+            return "trade"
+        if abs(raw_sig) > 0.01 and abs(gated_sig) < 0.01:
+            return "gated"
+        if blocks:
+            return "wait"
+        return "flat"
+
+    return [
+        {
+            "id": "POLY_GTA",
+            "name": "Polymarket GTA",
+            "venue": "Polymarket CLOB",
+            "slug": slug,
+            "price": poly_snap.get("price"),
+            "price_pct": poly_snap.get("price_pct"),
+            "price_label": "Yes implied prob",
+            "as_of": poly_snap.get("as_of") or whale.get("prob_as_of"),
+            "chg_1d_pct": poly_snap.get("chg_1d_pct"),
+            "signal_raw": raw.get("POLY_GTA", 0),
+            "signal_gated": sig.get("POLY_GTA", 0),
+            "gate_reason": reasons.get("POLY_GTA", ""),
+            "sleeve": "whale_flow v2",
+            "trade_when": "7d net whale flow ≥ $12k, ≥4 large trades, EMA trend agrees",
+            "status": _status(float(raw.get("POLY_GTA", 0)), float(sig.get("POLY_GTA", 0)), whale_blocks),
+            "blocking": whale_blocks,
+            "data_through": whale.get("trades_through") or poly_snap.get("as_of"),
+        },
+        {
+            "id": "DOGE",
+            "name": "Dogecoin",
+            "venue": "Spot (Yahoo / Kraken / CoinGecko)",
+            "price": pairs.get("doge_price"),
+            "price_label": "USD",
+            "as_of": pairs.get("doge_as_of"),
+            "chg_1d_pct": pairs.get("doge_chg_1d_pct"),
+            "signal_raw": raw.get("DOGE", 0),
+            "signal_gated": sig.get("DOGE", 0),
+            "gate_reason": reasons.get("DOGE", ""),
+            "sleeve": "pairs_stat_arb v2",
+            "trade_when": "Pairs: |z|>2 → long DOGE / short WIF (or opposite)",
+            "status": _status(float(raw.get("DOGE", 0)), float(sig.get("DOGE", 0)), pairs_blocks),
+            "blocking": pairs_blocks,
+            "spread_z": pairs.get("spread_z"),
+        },
+        {
+            "id": "WIF",
+            "name": "dogwifhat",
+            "venue": "Spot (Yahoo / Kraken / CoinGecko)",
+            "price": pairs.get("wif_price"),
+            "price_label": "USD",
+            "as_of": pairs.get("wif_as_of"),
+            "chg_1d_pct": pairs.get("wif_chg_1d_pct"),
+            "signal_raw": raw.get("WIF", 0),
+            "signal_gated": sig.get("WIF", 0),
+            "gate_reason": reasons.get("WIF", ""),
+            "sleeve": "pairs_stat_arb v2",
+            "trade_when": "Pairs: |z|>2 → hedge leg vs DOGE",
+            "status": _status(float(raw.get("WIF", 0)), float(sig.get("WIF", 0)), pairs_blocks),
+            "blocking": pairs_blocks,
+            "spread_z": pairs.get("spread_z"),
+        },
+    ]
+
+
 def _spec_json(spec: StrategySpec) -> dict:
     return {
         "id": spec.id,
@@ -168,7 +274,9 @@ def build_live_payload(
         bundle["prices"].get("DOGE"),
         bundle["prices"].get("WIF"),
         notional_usd=100.0,
+        trades=bundle.get("trades"),
     )
+    assets_live = _build_assets_live(bundle, exec_snap, slug)
     sig = exec_snap["signals"]
     intents = exec_snap["clob_intents"]
     news_gate = exec_snap["news_gate"]
@@ -219,6 +327,12 @@ def build_live_payload(
         "slug": slug,
         "lookback_start": start,
         "lookback_end": end,
+        "lookback_days": lookback_days,
+        "metrics_note": (
+            f"Tab metrics = backtest over last {lookback_days} calendar days "
+            f"({start} → {end}), recomputed on each refresh — not tick-level live PnL."
+        ),
+        "assets_live": assets_live,
         "catalog_ids": [s.id for s in STRATEGY_CATALOG if s.runnable],
         "strategies": strategies,
         "fetch_errors": {k: v for k, v in fetch_errors.items() if v},

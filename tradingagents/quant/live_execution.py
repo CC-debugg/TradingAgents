@@ -7,12 +7,12 @@ import pandas as pd
 from tradingagents.dataflows.macro_news import fetch_macro_news_snapshot
 from tradingagents.execution.polymarket_clob import OrderIntent, target_positions_from_signals
 from tradingagents.quant.news_gate import apply_news_gate, score_macro_news
-from tradingagents.quant.pairs_stat_arb import latest_pairs_signal, pairs_spread_returns_v2
+from tradingagents.quant.pairs_stat_arb import pairs_execution_detail, pairs_spread_returns_v2
 from tradingagents.quant.whale_strategy import (
     WhaleStrategyConfig,
     backtest_whale_strategy,
     daily_whale_flow,
-    latest_whale_signal,
+    whale_execution_detail,
     whale_flow_signal_v2,
 )
 
@@ -40,6 +40,7 @@ def build_live_execution_snapshot(
     doge: pd.Series | None,
     wif: pd.Series | None,
     notional_usd: float = 100.0,
+    trades: pd.DataFrame | None = None,
 ) -> dict:
     """
     News-gated signals for CLOB + meme legs.
@@ -47,9 +48,9 @@ def build_live_execution_snapshot(
     """
     news = fetch_macro_news_snapshot()
     gate = score_macro_news(news)
-    whale = latest_whale_signal(flow, poly, WhaleStrategyConfig())
+    whale = whale_execution_detail(flow, poly, trades, WhaleStrategyConfig())
     pairs = (
-        latest_pairs_signal(doge, wif)
+        pairs_execution_detail(doge, wif)
         if doge is not None and wif is not None
         else {"spread_z": 0.0, "doge": 0.0, "wif": 0.0}
     )

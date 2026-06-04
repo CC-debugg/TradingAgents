@@ -151,6 +151,42 @@
     }
     .loading-overlay.show { display: flex; }
     .empty { color: var(--muted); padding: 40px; text-align: center; }
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 1000px) { .asset-grid { grid-template-columns: 1fr; } }
+    .asset-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      background: #12161c;
+    }
+    .asset-card h3 { margin: 0 0 8px; font-size: 0.85rem; color: var(--text); }
+    .asset-card .venue { font-size: 0.65rem; color: var(--muted); }
+    .asset-price { font-size: 1.25rem; color: var(--accent); margin: 6px 0; }
+    .pill {
+      display: inline-block;
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 6px;
+      margin-top: 4px;
+    }
+    .pill.trade { background: #1f3d2a; color: var(--green); }
+    .pill.wait { background: #2a2418; color: #ffaa44; }
+    .pill.flat { background: #21262d; color: var(--muted); }
+    .pill.blocked, .pill.blocked_macro { background: #3d1f28; color: var(--red); }
+    .pill.gated { background: #2a2418; color: #ffaa44; }
+    .check-row { font-size: 0.72rem; margin: 4px 0; color: var(--muted); }
+    .check-row.ok { color: var(--green); }
+    .check-row.fail { color: #ff8866; }
+    .flow-table { width: 100%; font-size: 0.72rem; border-collapse: collapse; margin-top: 8px; }
+    .flow-table th, .flow-table td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: right; }
+    .flow-table th { color: var(--muted); text-align: left; }
+    .whale-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 900px) { .whale-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -360,6 +396,173 @@
       ctx.fillText(equity[equity.length - 1].t, pad.l + plotW - 70, ch - 6);
     }
 
+    function statusPill(status) {
+      const s = status || "flat";
+      const label =
+        s === "trade"
+          ? "TRADE"
+          : s === "wait"
+            ? "WAIT"
+            : s === "blocked_macro"
+              ? "MACRO OFF"
+              : s === "gated"
+                ? "GATED"
+                : "FLAT";
+      return '<span class="pill ' + s + '">' + label + "</span>";
+    }
+
+    function renderChecks(checks) {
+      if (!checks || !checks.length) return "";
+      return checks
+        .map(function (c) {
+          const cls = c.ok ? "ok" : "fail";
+          return (
+            '<div class="check-row ' +
+            cls +
+            '">' +
+            (c.ok ? "✓" : "✗") +
+            " " +
+            c.label +
+            " · <i>" +
+            (c.value || "") +
+            "</i></div>"
+          );
+        })
+        .join("");
+    }
+
+    function renderAssetsLive() {
+      const assets = payload.assets_live || [];
+      if (!assets.length) return "";
+      return (
+        '<div class="card"><h2>Assets · live snapshot (on refresh)</h2>' +
+        '<p class="desc">Latest prices &amp; whether we trade <b>now</b>. Tab metrics above are ' +
+        (payload.lookback_days || "—") +
+        "-day backtest.</p>" +
+        '<div class="asset-grid">' +
+        assets
+          .map(function (a) {
+            const px =
+              a.price_pct != null
+                ? a.price_pct + "% Yes"
+                : a.price != null
+                  ? "$" + Number(a.price).toLocaleString(undefined, { maximumFractionDigits: 6 })
+                  : "—";
+            const chg =
+              a.chg_1d_pct != null
+                ? (a.chg_1d_pct >= 0 ? "+" : "") + a.chg_1d_pct + "% 1d"
+                : "";
+            const blocks = (a.blocking || [])
+              .map(function (b) {
+                return "<li>" + b + "</li>";
+              })
+              .join("");
+            return (
+              '<div class="asset-card">' +
+              "<h3>" +
+              a.name +
+              " [" +
+              a.id +
+              "]</h3>" +
+              '<div class="venue">' +
+              (a.venue || "") +
+              (a.as_of ? " · as of " + a.as_of : "") +
+              "</div>" +
+              statusPill(a.status) +
+              '<div class="asset-price">' +
+              px +
+              "</div>" +
+              '<p class="desc">' +
+              (chg ? chg + " · " : "") +
+              (a.price_label || "") +
+              "</p>" +
+              "<p><b>Signal</b> raw <code>" +
+              fmtNum(a.signal_raw, 2) +
+              "</code> → gated <code>" +
+              fmtNum(a.signal_gated, 2) +
+              "</code>" +
+              (a.gate_reason ? " (" + a.gate_reason + ")" : "") +
+              "</p>" +
+              '<p class="desc"><b>Trade when:</b> ' +
+              (a.trade_when || "") +
+              "</p>" +
+              (a.spread_z != null ? '<p class="desc">Pairs z = <code>' + a.spread_z + "</code></p>" : "") +
+              (blocks ? '<ul class="desc" style="margin:6px 0;padding-left:16px">' + blocks + "</ul>" : "") +
+              "</div>"
+            );
+          })
+          .join("") +
+        "</div></div>"
+      );
+    }
+
+    function renderWhaleDetail(whale) {
+      if (!whale || whale.mode == null) return "";
+      const daily = whale.daily_flow || [];
+      const rows = daily
+        .map(function (d) {
+          return (
+            "<tr><td>" +
+            d.date +
+            "</td><td>" +
+            (d.n_trades || 0) +
+            "</td><td>" +
+            (d.flow_yes_usd != null ? "$" + Math.round(d.flow_yes_usd).toLocaleString() : "—") +
+            "</td><td>" +
+            (d.flow_no_usd != null ? "$" + Math.round(d.flow_no_usd).toLocaleString() : "—") +
+            "</td><td>" +
+            (d.flow_net_usd != null ? "$" + Math.round(d.flow_net_usd).toLocaleString() : "—") +
+            "</td></tr>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="card"><h2>Whale flow · detail (last ' +
+        (whale.flow_window_days || 7) +
+        " days)</h2>" +
+        '<div class="whale-grid">' +
+        "<div>" +
+        '<p class="desc">Rolling window on refresh — not tick-by-tick.</p>' +
+        '<div class="stats" style="margin-bottom:8px">' +
+        "<span>Signal <b>" +
+        fmtNum(whale.signal, 2) +
+        "</b></span>" +
+        "<span>7d net flow <b>$" +
+        Math.round(whale.flow_net_usd || 0).toLocaleString() +
+        "</b></span>" +
+        "<span>Volume <b>$" +
+        Math.round(whale.volume_usd || 0).toLocaleString() +
+        "</b></span>" +
+        "<span>Trades <b>" +
+        (whale.n_trades != null ? whale.n_trades : "—") +
+        "</b></span>" +
+        "<span>Avg size <b>$" +
+        Math.round(whale.avg_trade_usd || 0).toLocaleString() +
+        "</b></span>" +
+        "<span>Max trade <b>$" +
+        Math.round(whale.max_trade_usd || 0).toLocaleString() +
+        "</b></span>" +
+        "</div>" +
+        "<p class='desc'>Yes prob <b>" +
+        (whale.prob_last != null ? (whale.prob_last * 100).toFixed(1) + "%" : "—") +
+        "</b> · EMA fast/slow <b>" +
+        (whale.ema_fast != null ? whale.ema_fast : "—") +
+        " / " +
+        (whale.ema_slow != null ? whale.ema_slow : "—") +
+        "</b> · trend <b>" +
+        (whale.trend || "—") +
+        "</b>" +
+        (whale.trades_through ? " · trades through " + whale.trades_through : "") +
+        "</p>" +
+        renderChecks(whale.checks) +
+        "</div>" +
+        "<div>" +
+        '<table class="flow-table"><thead><tr><th>Date</th><th>#</th><th>Yes $</th><th>No $</th><th>Net $</th></tr></thead><tbody>' +
+        (rows || "<tr><td colspan='5'>No daily flow</td></tr>") +
+        "</tbody></table></div></div></div>"
+      );
+    }
+
     function factorBars(factors) {
       if (!factors || !factors.length) return "<p class='desc'>No Barra attribution.</p>";
       const maxB = Math.max(0.01, ...factors.map((f) => Math.abs(f.beta)));
@@ -441,6 +644,7 @@
         (s.n_days || "—") +
         "</b></span>" +
         "</div></div>" +
+        renderAssetsLive() +
         '<div class="grid2">' +
         '<div class="card"><h2>Equity curve</h2>' +
         '<canvas id="eqChart"></canvas>' +
@@ -461,14 +665,27 @@
         "<li><b>Whale</b>: flow ≥ $12k, ≥4 trades, EMA agrees → POLY ±1.</li>" +
         "<li><b>Pairs</b>: |z|>2 → DOGE/WIF spread trade.</li>" +
         "<li>Use <b>Live composite</b> tab for the book we send to CLOB.</li></ol></div>" +
+        renderWhaleDetail(whale) +
+        '<div class="card"><h2>Pairs · detail</h2>' +
+        '<div class="stats">' +
+        "<span>z <b>" + (pairs.spread_z != null ? pairs.spread_z : "—") + "</b></span>" +
+        "<span>DOGE <b>$" + (pairs.doge_price != null ? pairs.doge_price : "—") + "</b></span>" +
+        "<span>WIF <b>$" + (pairs.wif_price != null ? pairs.wif_price : "—") + "</b></span>" +
+        "<span>log(D/W) <b>" + (pairs.log_ratio != null ? pairs.log_ratio : "—") + "</b></span>" +
+        "</div>" +
+        renderChecks(pairs.checks) +
+        "</div>" +
         '<div class="card signals"><h2>Production execution (news-gated)</h2>' +
         "<p>Macro gate <code style='color:" + gateColor + "'>" +
         (gate.label || "—") + " · score " + (gate.score != null ? gate.score : "—") +
         "</code></p>" +
-        "<p>Whale v2 signal <code>" + (whale.signal != null ? whale.signal : "—") +
-        "</code> · flow $" + (whale.flow_net_usd != null ? Math.round(whale.flow_net_usd) : "—") +
+        "<p>Whale v2 <code>" + (whale.signal != null ? whale.signal : "—") +
+        "</code> · 7d flow $" + (whale.flow_net_usd != null ? Math.round(whale.flow_net_usd).toLocaleString() : "—") +
+        " · vol $" + (whale.volume_usd != null ? Math.round(whale.volume_usd).toLocaleString() : "—") +
         " · trades " + (whale.n_trades != null ? whale.n_trades : "—") + "</p>" +
-        "<p>Pairs z <code>" + (pairs.spread_z != null ? pairs.spread_z : "—") + "</code></p>" +
+        "<p>Pairs z <code>" + (pairs.spread_z != null ? pairs.spread_z : "—") +
+        "</code> · DOGE/WIF " + (pairs.doge_price != null ? "$" + pairs.doge_price : "—") +
+        " / " + (pairs.wif_price != null ? "$" + pairs.wif_price : "—") + "</p>" +
         "<p><b>After gate:</b> POLY <code>" + (sig.POLY_GTA != null ? sig.POLY_GTA : "—") +
         "</code> (raw " + (raw.POLY_GTA != null ? raw.POLY_GTA : "—") +
         ", " + (reasons.POLY_GTA || "") + ") · DOGE <code>" +
