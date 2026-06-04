@@ -1,0 +1,6 @@
+# Minimal deps for public live dashboard (no LangChain / agents)
+pandas>=2.3.0
+numpy>=1.26.0
+yfinance>=0.2.63
+requests>=2.32.4
+pytz>=2025.2

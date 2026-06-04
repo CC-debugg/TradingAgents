@@ -10,6 +10,7 @@ from .y_finance import (
     get_income_statement as get_yfinance_income_statement,
     get_insider_transactions as get_yfinance_insider_transactions,
 )
+from .nautilus_data import get_nautilus_data_online
 from .yfinance_news import get_news_yfinance, get_global_news_yfinance
 from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
@@ -64,6 +65,7 @@ TOOLS_CATEGORIES = {
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
+    "nautilus",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -72,6 +74,7 @@ VENDOR_METHODS = {
     "get_stock_data": {
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
+        "nautilus": get_nautilus_data_online,
     },
     # technical_indicators
     "get_indicators": {

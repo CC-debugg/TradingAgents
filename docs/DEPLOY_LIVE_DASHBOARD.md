@@ -1,0 +1,82 @@
+# Deploy the live strategy dashboard (public URL)
+
+Share the interactive dashboard (`live_composite` + whale + pairs) with your team or the public.
+
+**Local only today:** `http://127.0.0.1:8765/` runs on your machine — others cannot open it.
+
+---
+
+## Option A — Render.com (recommended, free tier)
+
+1. Push this repo to **GitHub**.
+2. Sign up at [render.com](https://render.com) → **New → Blueprint** → connect the repo.
+3. Render reads `render.yaml` and builds `Dockerfile.live-dashboard`.
+4. After deploy, open: `https://polymarket-live-dashboard.onrender.com/` (name may vary).
+5. First request after idle can take **30–60s** (free tier cold start).
+
+**Optional env vars (Render → Environment):**
+
+| Variable | Purpose |
+|----------|---------|
+| `DASHBOARD_BASIC_AUTH` | `username:password` — simple login wall |
+| `FRED_API_KEY` | Extra macro data in news panel |
+| `PUBLIC_BASE_URL` | Shown in startup logs |
+
+**Never set on a public demo:** `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_LIVE=1`.
+
+---
+
+## Option B — Docker (any VPS: AWS, GCP, DigitalOcean)
+
+```bash
+cd TradingAgents
+docker build -f Dockerfile.live-dashboard -t polymarket-live .
+docker run -p 8765:8765 -e DASHBOARD_BASIC_AUTH='team:secret' polymarket-live
+```
+
+Open `http://<server-ip>:8765/` (put nginx + HTTPS in front for production).
+
+---
+
+## Option C — Quick share (ngrok, same laptop)
+
+```bash
+python scripts/polymarket_meme_run.py live-app --public
+# other terminal:
+ngrok http 8765
+```
+
+Share the `https://….ngrok.io` link — lasts while your laptop and ngrok run.
+
+---
+
+## Local vs public server
+
+```bash
+# Local only (default)
+python scripts/polymarket_meme_run.py live-app
+
+# Listen on all interfaces (LAN / VPS)
+python scripts/polymarket_meme_run.py live-app --public
+```
+
+Cloud sets `PORT` automatically; use `--port $PORT` if needed.
+
+---
+
+## Security (real money)
+
+- Public dashboard = **research / monitoring only** (`POLYMARKET_LIVE=0`).
+- Run **CLOB live trading** on a **private** machine with keys — not on Render.
+- Use `DASHBOARD_BASIC_AUTH` if the URL should not be fully open.
+
+---
+
+## Verify deploy
+
+```bash
+curl -s https://YOUR-URL/health
+curl -s https://YOUR-URL/api/version
+```
+
+Expect `dashboard_version: 2.1-production` and 3 strategy ids.

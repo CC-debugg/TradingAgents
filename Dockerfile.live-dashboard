@@ -1,0 +1,25 @@
+# Live strategy dashboard — public deploy
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-live-dashboard.txt .
+RUN pip install --no-cache-dir -r requirements-live-dashboard.txt
+
+COPY tradingagents/ tradingagents/
+COPY scripts/serve_polymarket_live.py scripts/
+COPY assets/dashboard_outputs/live_app/ assets/dashboard_outputs/live_app/
+
+# Cloud platforms set PORT; never enable live CLOB on public demo by default
+ENV POLYMARKET_LIVE=0
+
+EXPOSE 8765
+
+CMD ["python", "scripts/serve_polymarket_live.py", "--public"]

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Strategy Tabs · LIVE · Production</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #7a8899;
+      --accent: #00d4ff;
+      --green: #00ff88;
+      --red: #ff4466;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    header .meta { color: var(--muted); font-size: 0.8rem; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    button {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 14px;
+      cursor: pointer;
+      font: inherit;
+      border-radius: 4px;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: #0a3d4a; border-color: var(--accent); color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    label { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    main { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 72px); }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      nav { border-right: none; border-bottom: 1px solid var(--border); max-height: 180px; overflow-x: auto; display: flex; flex-direction: row; }
+      .tab-btn { flex: 0 0 auto; min-width: 140px; }
+    }
+    nav {
+      border-right: 1px solid var(--border);
+      padding: 12px 8px;
+      overflow-y: auto;
+    }
+    .tab-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      margin-bottom: 6px;
+      padding: 10px 12px;
+      border-radius: 4px;
+      background: transparent;
+      border: 1px solid transparent;
+    }
+    .tab-btn.active {
+      background: var(--panel);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .tab-btn .cat { font-size: 0.65rem; color: var(--muted); display: block; margin-top: 4px; }
+    .tab-btn .badge {
+      font-size: 0.6rem;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-left: 4px;
+      background: #1f3d2a;
+      color: var(--green);
+    }
+    .tab-btn .badge.off { background: #3d1f28; color: var(--red); }
+    section.content { padding: 16px 20px; overflow: auto; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 8px; font-size: 0.95rem; color: var(--accent); }
+    .card h3 { margin: 12px 0 6px; font-size: 0.8rem; color: var(--muted); font-weight: normal; }
+    .stats { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.85rem; }
+    .stats span b { color: var(--accent); }
+    .desc { color: var(--muted); font-size: 0.8rem; line-height: 1.4; }
+    canvas { width: 100%; height: 220px; display: block; }
+    .factor-row {
+      display: grid;
+      grid-template-columns: 140px 1fr 48px;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+      font-size: 0.75rem;
+    }
+    .factor-bar {
+      height: 10px;
+      background: #21262d;
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+    .factor-bar .pos {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      height: 100%;
+      background: var(--accent);
+    }
+    .factor-bar .neg {
+      position: absolute;
+      right: 50%;
+      top: 0;
+      height: 100%;
+      background: var(--red);
+    }
+    .news li { margin: 8px 0; font-size: 0.78rem; color: var(--muted); }
+    .news li a { color: var(--accent); text-decoration: none; }
+    .signals { font-size: 0.8rem; }
+    .signals code { color: var(--green); }
+    #status { color: var(--muted); font-size: 0.75rem; }
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 17, 23, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      color: var(--accent);
+    }
+    .loading-overlay.show { display: flex; }
+    .empty { color: var(--muted); padding: 40px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="overlay">Loading live data…</div>
+  <header>
+    <div>
+      <h1>PRODUCTION · whale + pairs · news-gated · v2.1</h1>
+      <div class="meta" id="asOf">As of —</div>
+    </div>
+    <div class="actions">
+      <label><input type="checkbox" id="autoRefresh" /> Auto 60s</label>
+      <button type="button" id="btnRefresh" class="primary">Refresh now</button>
+      <span id="status"></span>
+    </div>
+  </header>
+  <div id="staleWarn" style="display:none;background:#3d1f28;color:#ff4466;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d">
+    Server is running <b>old Python code</b> (7 strategies / all OFF). In terminal:
+    <code>kill $(lsof -t -i:8765)</code> then
+    <code>python scripts/polymarket_meme_run.py live-app</code> — then Cmd+Shift+R.
+  </div>
+  <main>
+    <nav id="tabs"></nav>
+    <section class="content" id="panel">
+      <p class="empty">Start server: <code>python scripts/serve_polymarket_live.py</code></p>
+    </section>
+  </main>
+  <script>
+    const API = "/api/live";
+    const PROD_IDS = ["live_composite", "whale_flow", "pairs_stat_arb"];
+    const EXPECT_VERSION = "2.1-production";
+    let payload = null;
+    let activeId = null;
+    let autoTimer = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    function isProdStrategy(s) {
+      return s.live_production === true || PROD_IDS.includes(s.id);
+    }
+
+    function visibleStrategies() {
+      if (!payload || !payload.strategies) return [];
+      const prod = payload.strategies.filter((s) => PROD_IDS.includes(s.id));
+      return prod.length >= 1 ? prod : payload.strategies;
+    }
+
+    function checkStale(data) {
+      const stale =
+        data.dashboard_version !== EXPECT_VERSION ||
+        (data.strategies && data.strategies.length > PROD_IDS.length);
+      $("staleWarn").style.display = stale ? "block" : "none";
+    }
+
+    function fmtPct(x) {
+      if (x == null || Number.isNaN(x)) return "—";
+      return (x * 100).toFixed(1) + "%";
+    }
+    function fmtNum(x, d = 3) {
+      if (x == null || Number.isNaN(x)) return "—";
+      return (x >= 0 ? "+" : "") + Number(x).toFixed(d);
+    }
+
+    function setLoading(on) {
+      $("overlay").classList.toggle("show", on);
+      $("btnRefresh").disabled = on;
+    }
+
+    async function fetchLive() {
+      setLoading(true);
+      $("status").textContent = "Fetching…";
+      const t0 = performance.now();
+      try {
+        const res = await fetch(API, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        payload = data;
+        checkStale(data);
+        $("asOf").textContent =
+          "As of " + data.as_of_ny + " · v" + (data.dashboard_version || "?") +
+          " · Universe: " + (data.universe || []).join(", ");
+        renderTabs();
+        activeId = "live_composite";
+        const hasComposite = (data.strategies || []).some((s) => s.id === "live_composite");
+        if (!hasComposite && data.strategies && data.strategies.length) {
+          activeId = data.strategies[0].id;
+        }
+        if (activeId) renderStrategy(activeId);
+        const ms = Math.round(performance.now() - t0);
+        $("status").textContent = "Updated " + ms + "ms ago";
+      } catch (e) {
+        $("status").textContent = "Error: " + e.message;
+        $("panel").innerHTML =
+          '<p class="empty">Failed to load. Is <code>serve_polymarket_live.py</code> running?<br/>' +
+          e.message + "</p>";
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderTabs() {
+      const nav = $("tabs");
+      nav.innerHTML = "";
+      if (!payload || !visibleStrategies().length) {
+        nav.innerHTML = '<p class="empty">No strategies</p>';
+        return;
+      }
+      const sorted = [...visibleStrategies()].sort((a, b) => {
+        if (a.id === "live_composite") return -1;
+        if (b.id === "live_composite") return 1;
+        return (b.live_production ? 1 : 0) - (a.live_production ? 1 : 0);
+      });
+      sorted.forEach((s) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "tab-btn" + (s.id === activeId ? " active" : "");
+        const wr = s.metrics && s.metrics.win_rate != null ? (s.metrics.win_rate * 100).toFixed(0) + "%" : "—";
+        const prod = isProdStrategy(s);
+        const badge = prod ? "PROD" : "OFF";
+        const badgeClass = prod ? "" : " off";
+        btn.innerHTML =
+          s.name +
+          '<span class="badge' + badgeClass + '">' + badge + "</span>" +
+          '<span class="cat">' + s.category + " · WR " + wr + "</span>";
+        btn.onclick = () => {
+          activeId = s.id;
+          document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          renderStrategy(s.id);
+        };
+        nav.appendChild(btn);
+      });
+    }
+
+    function drawEquity(canvas, equity) {
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
+      const h = canvas.height = 220 * (window.devicePixelRatio || 1);
+      ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+      const cw = canvas.clientWidth;
+      const ch = 220;
+      ctx.clearRect(0, 0, cw, ch);
+      if (!equity || equity.length < 2) {
+        ctx.fillStyle = "#7a8899";
+        ctx.font = "12px monospace";
+        ctx.fillText("Not enough equity points", 12, ch / 2);
+        return;
+      }
+      const vals = equity.map((p) => p.v);
+      const minV = Math.min(...vals) * 0.98;
+      const maxV = Math.max(...vals) * 1.02;
+      const pad = { l: 44, r: 12, t: 12, b: 28 };
+      const plotW = cw - pad.l - pad.r;
+      const plotH = ch - pad.t - pad.b;
+      const last = vals[vals.length - 1];
+      const color = last >= 1 ? "#00ff88" : "#ff4466";
+
+      ctx.strokeStyle = "#30363d";
+      ctx.lineWidth = 1;
+      const y1 = pad.t + plotH * (1 - (1 - minV) / (maxV - minV || 1));
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y1);
+      ctx.lineTo(pad.l + plotW, y1);
+      ctx.stroke();
+
+      ctx.beginPath();
+      equity.forEach((p, i) => {
+        const x = pad.l + (i / (equity.length - 1)) * plotW;
+        const y = pad.t + plotH * (1 - (p.v - minV) / (maxV - minV || 1));
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "#7a8899";
+      ctx.font = "10px monospace";
+      ctx.fillText("Cumulative ($1 start)", pad.l, 10);
+      ctx.fillText(maxV.toFixed(2), 4, pad.t + 8);
+      ctx.fillText(minV.toFixed(2), 4, pad.t + plotH);
+      ctx.fillText(equity[0].t, pad.l, ch - 6);
+      ctx.fillText(equity[equity.length - 1].t, pad.l + plotW - 70, ch - 6);
+    }
+
+    function factorBars(factors) {
+      if (!factors || !factors.length) return "<p class='desc'>No Barra attribution.</p>";
+      const maxB = Math.max(0.01, ...factors.map((f) => Math.abs(f.beta)));
+      return factors
+        .map((f) => {
+          const pct = Math.min(100, (Math.abs(f.beta) / maxB) * 50);
+          const bar =
+            f.beta >= 0
+              ? '<div class="pos" style="width:' + pct + '%"></div>'
+              : '<div class="neg" style="width:' + pct + '%"></div>';
+          return (
+            '<div class="factor-row"><span>' +
+            (f.label || f.factor) +
+            '</span><div class="factor-bar">' +
+            bar +
+            '</div><span>' +
+            fmtNum(f.beta, 3) +
+            "</span></div>"
+          );
+        })
+        .join("");
+    }
+
+    function renderStrategy(id) {
+      const s = (payload.strategies || []).find((x) => x.id === id);
+      if (!s) return;
+      const m = s.metrics || {};
+      const sig = payload.signals || {};
+      const raw = payload.signals_raw || {};
+      const gate = payload.news_gate || {};
+      const whale = payload.whale_live || {};
+      const pairs = payload.pairs_live || {};
+      const reasons = payload.gate_reason || {};
+      const news = payload.news || {};
+      const ecb = (news.ecb || []).slice(0, 8);
+      const fred = news.fred || [];
+      const gateColor = gate.allow_new_trades ? "#00ff88" : "#ff4466";
+
+      $("panel").innerHTML =
+        '<div class="card">' +
+        "<h2>" +
+        s.name +
+        " <span style='color:#7a8899;font-weight:normal'>[" +
+        s.id +
+        "]</span></h2>" +
+        '<p class="desc">' +
+        s.description +
+        "</p>" +
+        '<p class="desc"><i>' +
+        s.reference +
+        "</i></p>" +
+        '<div class="stats">' +
+        "<span>Win rate <b>" +
+        fmtPct(m.win_rate) +
+        "</b></span>" +
+        "<span>Sharpe <b>" +
+        fmtNum(m.sharpe) +
+        "</b></span>" +
+        "<span>Return (ann.) <b>" +
+        fmtPct(m.cagr != null ? m.cagr : m.total_return) +
+        "</b></span>" +
+        "<span>Cum. return <b>" +
+        fmtPct(m.total_return) +
+        "</b></span>" +
+        "<span>Max DD <b>" +
+        fmtPct(m.max_dd) +
+        "</b></span>" +
+        "<span>R² Barra <b>" +
+        (s.r2_barra != null ? s.r2_barra.toFixed(3) : "—") +
+        "</b></span>" +
+        "<span>Days <b>" +
+        (s.n_days || "—") +
+        "</b></span>" +
+        "</div></div>" +
+        '<div class="grid2">' +
+        '<div class="card"><h2>Equity curve</h2>' +
+        '<canvas id="eqChart"></canvas>' +
+        "<p class='desc'>Source: live backtest · " +
+        (s.start || "") +
+        " → " +
+        (s.end || "") +
+        "</p></div>" +
+        '<div class="card"><h2>MSCI Barra-style factor β (ETF proxy)</h2>' +
+        factorBars(s.factors) +
+        "</div></div>" +
+        '<div class="card"><h2>When do we trade? (news gate)</h2>' +
+        '<ol class="desc" style="line-height:1.6;margin:8px 0 8px 18px">' +
+        "<li><b>Refresh</b> → ECB headlines (+ FRED if API key).</li>" +
+        "<li><b>Macro score</b> [-1,1]: inflation/crisis/tightening → lower.</li>" +
+        "<li><b>Score ≤ −0.35</b> → <span style='color:#ff4466'>block all new orders</span>.</li>" +
+        "<li><b>Score −0.35…0</b> → half size.</li>" +
+        "<li><b>Whale</b>: flow ≥ $12k, ≥4 trades, EMA agrees → POLY ±1.</li>" +
+        "<li><b>Pairs</b>: |z|>2 → DOGE/WIF spread trade.</li>" +
+        "<li>Use <b>Live composite</b> tab for the book we send to CLOB.</li></ol></div>" +
+        '<div class="card signals"><h2>Production execution (news-gated)</h2>' +
+        "<p>Macro gate <code style='color:" + gateColor + "'>" +
+        (gate.label || "—") + " · score " + (gate.score != null ? gate.score : "—") +
+        "</code></p>" +
+        "<p>Whale v2 signal <code>" + (whale.signal != null ? whale.signal : "—") +
+        "</code> · flow $" + (whale.flow_net_usd != null ? Math.round(whale.flow_net_usd) : "—") +
+        " · trades " + (whale.n_trades != null ? whale.n_trades : "—") + "</p>" +
+        "<p>Pairs z <code>" + (pairs.spread_z != null ? pairs.spread_z : "—") + "</code></p>" +
+        "<p><b>After gate:</b> POLY <code>" + (sig.POLY_GTA != null ? sig.POLY_GTA : "—") +
+        "</code> (raw " + (raw.POLY_GTA != null ? raw.POLY_GTA : "—") +
+        ", " + (reasons.POLY_GTA || "") + ") · DOGE <code>" +
+        (sig.DOGE != null ? sig.DOGE : "—") + "</code> · WIF <code>" +
+        (sig.WIF != null ? sig.WIF : "—") + "</code></p>" +
+        "<p class='desc'>Production sleeve: " +
+        (payload.production_strategies || []).join(", ") +
+        " · CLOB: " + JSON.stringify(payload.clob_health || {}) + "</p></div>" +
+        '<div class="card"><h2>Macro news (ECB RSS' +
+        (news.fred_api_configured ? " + FRED" : "") +
+        ")</h2><ul class='news'>" +
+        ecb
+          .map(
+            (row) =>
+              "<li><a href='" +
+              (row.url || "#") +
+              "' target='_blank' rel='noopener'>" +
+              (row.title || "") +
+              "</a></li>"
+          )
+          .join("") +
+        fred
+          .map(
+            (r) =>
+              "<li>FRED " +
+              (r.series_id || "") +
+              ": " +
+              (r.value != null ? r.value : "—") +
+              " (" +
+              (r.date || "") +
+              ")</li>"
+          )
+          .join("") +
+        "</ul></div>";
+
+      const canvas = document.getElementById("eqChart");
+      if (canvas) drawEquity(canvas, s.equity);
+    }
+
+    $("btnRefresh").onclick = fetchLive;
+    $("autoRefresh").onchange = () => {
+      if (autoTimer) clearInterval(autoTimer);
+      autoTimer = null;
+      if ($("autoRefresh").checked) {
+        autoTimer = setInterval(fetchLive, 60000);
+      }
+    };
+
+    fetchLive();
+  </script>
+</body>
+</html>

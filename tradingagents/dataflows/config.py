@@ -26,7 +26,11 @@ def set_config(config: Dict):
     incoming = deepcopy(config)
     for key, value in incoming.items():
         if isinstance(value, dict) and isinstance(_config.get(key), dict):
-            _config[key].update(value)
+            # Allow callers to fully reset nested maps by passing an empty dict.
+            if not value:
+                _config[key] = {}
+            else:
+                _config[key].update(value)
         else:
             _config[key] = value
 

@@ -1,0 +1,20 @@
+# Render.com — Web Service
+# Dashboard: https://<your-service>.onrender.com/
+services:
+  - type: web
+    name: polymarket-live-dashboard
+    runtime: docker
+    dockerfilePath: ./Dockerfile.live-dashboard
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: POLYMARKET_LIVE
+        value: "0"
+      - key: HOST
+        value: 0.0.0.0
+      # Optional password protection: user:password
+      # - key: DASHBOARD_BASIC_AUTH
+      #   sync: false
+      # Optional FRED macro prints
+      # - key: FRED_API_KEY
+      #   sync: false
