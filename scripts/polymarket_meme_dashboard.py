@@ -96,7 +96,7 @@ VOL_LOOKBACK = 20                # days to estimate realized vol
 MAX_LEV    = 1.5                 # cap position size (no wild leverage)
 
 # ── Execution ────────────────────────────────────────────────
-TC_BPS     = 10                  # 0.10% per trade (when signal flips)
+TC_BPS     = 5                   # 5 bps per buy/sell leg (10 bps round-trip on flip)
 RISK_FREE  = 0.04                # annual
 
 # ── Simulation & output ──────────────────────────────────────

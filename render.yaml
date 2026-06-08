@@ -21,6 +21,10 @@ services:
         value: "4000"
       - key: LIVE_CACHE_SECONDS
         value: "90"
+      - key: LIVE_SIM_START
+        value: "2026-06-04"
+      - key: LIVE_SIM_CAPITAL
+        value: "1000000"
       # Optional password: username:password
       # - key: DASHBOARD_BASIC_AUTH
       #   sync: false

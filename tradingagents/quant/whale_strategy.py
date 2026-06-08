@@ -7,13 +7,15 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from tradingagents.quant.trading_costs import FEE_BPS_PER_LEG
+
 
 @dataclass
 class WhaleStrategyConfig:
     flow_window: int = 7
     min_flow_usd: float = 12_000.0
     min_whale_trades: int = 4
-    fee_bps: float = 20.0
+    fee_bps: float = FEE_BPS_PER_LEG
     hold_days: int = 1
     require_trend_confirm: bool = True
     prob_ema_fast: int = 5
@@ -253,7 +255,7 @@ def whale_execution_detail(
 def backtest_whale_strategy(
     prob: pd.Series,
     signal: pd.Series,
-    fee_bps: float = 20.0,
+    fee_bps: float = FEE_BPS_PER_LEG,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
     PnL from positioning on Yes implied probability changes.
@@ -327,7 +329,7 @@ def walk_forward_whale(
     test_days: int = 14,
     windows: tuple[int, ...] = (3, 5, 7, 10),
     thresholds: tuple[float, ...] = (2000, 5000, 10000, 20000),
-    fee_bps: float = 20.0,
+    fee_bps: float = FEE_BPS_PER_LEG,
 ) -> tuple[pd.DataFrame, pd.Series, WhaleStrategyConfig]:
     """
     Rolling train: pick (flow_window, min_flow_usd) by train Sharpe.

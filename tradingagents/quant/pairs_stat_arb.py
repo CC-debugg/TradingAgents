@@ -5,13 +5,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from tradingagents.quant.trading_costs import FEE_BPS_PER_LEG, round_trip_cost_pairs_spread
+
 
 def pairs_spread_returns(
     price_a: pd.Series,
     price_b: pd.Series,
     lookback: int = 20,
     entry_z: float = 1.5,
-    fee_bps: float = 10.0,
+    fee_bps: float = FEE_BPS_PER_LEG,
 ) -> pd.Series:
     """
     Mean-reversion on log price ratio z-score.
@@ -43,7 +45,7 @@ def pairs_spread_returns_v2(
     lookback: int = 20,
     entry_z: float = 2.0,
     exit_z: float = 0.75,
-    fee_bps: float = 10.0,
+    fee_bps: float = FEE_BPS_PER_LEG,
 ) -> pd.Series:
     """Stricter entry (|z|>2) + exit when |z|<0.75 — fewer but higher-quality trades."""
     a = price_a.dropna().sort_index()
@@ -74,7 +76,7 @@ def pairs_spread_returns_v2(
     ret_a = a.pct_change()
     ret_b = b.pct_change()
     spread_ret = sig.shift(1) * (ret_a - ret_b)
-    tc = (sig.diff().abs() > 0) * (fee_bps / 10_000) * 2
+    tc = round_trip_cost_pairs_spread(sig, fee_bps)
     return (spread_ret - tc).dropna()
 
 

@@ -53,17 +53,47 @@
     button.primary { background: #0a3d4a; border-color: var(--accent); color: var(--accent); }
     button:disabled { opacity: 0.5; cursor: wait; }
     label { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-    main { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 72px); }
+    .screen-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      background: #0a0e14;
+    }
+    .screen-nav button {
+      font-size: 0.75rem;
+      padding: 8px 12px;
+    }
+    .screen-nav button.active {
+      background: #0a3d4a;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    main { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 120px); }
+    main.full-width { grid-template-columns: 1fr; }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; }
-      nav { border-right: none; border-bottom: 1px solid var(--border); max-height: 180px; overflow-x: auto; display: flex; flex-direction: row; }
+      nav.strategy-sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 160px; overflow-x: auto; display: flex; flex-direction: row; }
       .tab-btn { flex: 0 0 auto; min-width: 140px; }
     }
-    nav {
+    nav.strategy-sidebar {
       border-right: 1px solid var(--border);
       padding: 12px 8px;
       overflow-y: auto;
     }
+    .workflow-step {
+      border-left: 2px solid var(--accent);
+      padding: 8px 12px;
+      margin: 8px 0;
+      background: #12161c;
+    }
+    .regime-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    @media (max-width: 800px) { .regime-grid { grid-template-columns: 1fr; } }
+    .regime-card { border: 1px solid var(--border); padding: 10px; border-radius: 4px; font-size: 0.75rem; }
+    .regime-card.current { border-color: var(--green); }
+    .bt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .bt-row { grid-template-columns: 1fr; } }
     .tab-btn {
       display: block;
       width: 100%;
@@ -187,13 +217,42 @@
     .flow-table th { color: var(--muted); text-align: left; }
     .whale-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     @media (max-width: 900px) { .whale-grid { grid-template-columns: 1fr; } }
+    #summaryBar {
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      background: #0a0e14;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 0.78rem;
+    }
+    #summaryBar .chip {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      background: var(--panel);
+    }
+    #summaryBar .chip b { color: var(--accent); }
+    #summaryBar .chip.green b { color: var(--green); }
+    #summaryBar .chip.red b { color: var(--red); }
+    #summaryBar .nav-chip {
+      cursor: pointer;
+      color: var(--accent);
+      border-color: #0a3d4a;
+    }
+    #summaryBar .nav-chip:hover { background: #0a3d4a; }
+    .module-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 1000px) { .module-grid { grid-template-columns: 1fr; } }
+    .alpha-tag { font-size: 0.6rem; background: #2a2418; color: #ffaa44; padding: 1px 5px; border-radius: 3px; }
+    .wf-fold { font-size: 0.7rem; color: var(--muted); margin: 4px 0; }
   </style>
 </head>
 <body>
   <div class="loading-overlay" id="overlay">Loading live data…</div>
   <header>
     <div>
-      <h1>PRODUCTION · whale + pairs · news-gated · v2.1</h1>
+      <h1>PRODUCTION · HF manager · $1M sim · regime blend</h1>
       <div class="meta" id="asOf">As of —</div>
     </div>
     <div class="actions">
@@ -202,14 +261,23 @@
       <span id="status"></span>
     </div>
   </header>
+  <div id="summaryBar"></div>
   <div id="staleWarn" style="display:none;background:#3d1f28;color:#ff4466;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d">
     Server is running <b>old Python code</b> (7 strategies / all OFF). In terminal:
     <code>kill $(lsof -t -i:8765)</code> then
     <code>python scripts/polymarket_meme_run.py live-app</code> — then Cmd+Shift+R.
   </div>
   <div id="dataWarn" style="display:none;background:#2a2418;color:#ffaa44;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d"></div>
-  <main>
-    <nav id="tabs"></nav>
+  <nav class="screen-nav" id="screenNav">
+    <button type="button" data-screen="strategies" class="active">1 · Strategies LIVE</button>
+    <button type="button" data-screen="market">2 · Market</button>
+    <button type="button" data-screen="risk">3 · Risk factors</button>
+    <button type="button" data-screen="backtest">4 · Backtesting</button>
+    <button type="button" data-screen="workflow">5 · Workflow &amp; regime</button>
+    <button type="button" data-screen="book">6 · Book · α · WF</button>
+  </nav>
+  <main id="mainArea">
+    <nav class="strategy-sidebar" id="tabs"></nav>
     <section class="content" id="panel">
       <p class="empty">Start server: <code>python scripts/serve_polymarket_live.py</code></p>
     </section>
@@ -217,12 +285,41 @@
   <script>
     const API = "/api/live";
     const PROD_IDS = ["live_composite", "whale_flow", "pairs_stat_arb"];
-    const EXPECT_VERSION = "2.1-production";
+    const ALPHA_IDS = [
+      "ts_momentum_meme",
+      "cs_momentum_rank",
+      "short_term_reversal",
+      "poly_mean_reversion",
+      "vol_risk_parity",
+    ];
+    const EXPECT_VERSION = "2.4-dual-regime";
     let payload = null;
     let activeId = null;
     let autoTimer = null;
+    let currentScreen = "strategies";
 
     const $ = (id) => document.getElementById(id);
+
+    function setScreen(name) {
+      currentScreen = name;
+      document.querySelectorAll("#screenNav button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.screen === name);
+      });
+      const main = $("mainArea");
+      const sidebar = $("tabs");
+      if (name === "strategies") {
+        main.classList.remove("full-width");
+        sidebar.style.display = "";
+      } else {
+        main.classList.add("full-width");
+        sidebar.style.display = "none";
+      }
+      renderScreen();
+    }
+
+    document.querySelectorAll("#screenNav button").forEach((b) => {
+      b.onclick = () => setScreen(b.dataset.screen);
+    });
 
     function isProdStrategy(s) {
       return s.live_production === true || PROD_IDS.includes(s.id);
@@ -230,17 +327,21 @@
 
     function visibleStrategies() {
       if (!payload || !payload.strategies) return [];
-      const prod = payload.strategies.filter((s) => PROD_IDS.includes(s.id));
-      if (prod.length >= PROD_IDS.length) return prod;
-      if (prod.length >= 1) return prod;
       return payload.strategies;
     }
 
     function checkStale(data) {
-      const stale =
-        data.dashboard_version !== EXPECT_VERSION ||
-        (data.strategies && data.strategies.length > PROD_IDS.length);
+      const ver = data.dashboard_version || "";
+      const stale = ver !== EXPECT_VERSION;
       $("staleWarn").style.display = stale ? "block" : "none";
+      if (stale) {
+        $("staleWarn").innerHTML =
+          "Server code <b>" +
+          (ver || "?") +
+          "</b> ≠ UI <b>" +
+          EXPECT_VERSION +
+          "</b>. Restart: <code>python scripts/polymarket_meme_run.py live-app</code> then hard refresh.";
+      }
     }
 
     function checkDataWarn(data) {
@@ -291,14 +392,15 @@
         checkDataWarn(data);
         $("asOf").textContent =
           "As of " + data.as_of_ny + " · v" + (data.dashboard_version || "?") +
-          " · Universe: " + (data.universe || []).join(", ");
+          " · Sim from " + ((data.sim_config || {}).start || "—");
         renderTabs();
-        activeId = "live_composite";
+        renderSummaryBar();
+        if (!activeId) activeId = "live_composite";
         const hasComposite = (data.strategies || []).some((s) => s.id === "live_composite");
         if (!hasComposite && data.strategies && data.strategies.length) {
           activeId = data.strategies[0].id;
         }
-        if (activeId) renderStrategy(activeId);
+        renderScreen();
         const ms = Math.round(performance.now() - t0);
         $("status").textContent = "Updated " + ms + "ms ago";
       } catch (e) {
@@ -329,7 +431,7 @@
         btn.className = "tab-btn" + (s.id === activeId ? " active" : "");
         const wr = s.metrics && s.metrics.win_rate != null ? (s.metrics.win_rate * 100).toFixed(0) + "%" : "—";
         const prod = isProdStrategy(s);
-        const badge = prod ? "PROD" : "OFF";
+        const badge = prod ? "PROD" : "α";
         const badgeClass = prod ? "" : " off";
         btn.innerHTML =
           s.name +
@@ -339,13 +441,14 @@
           activeId = s.id;
           document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
           btn.classList.add("active");
-          renderStrategy(s.id);
+          renderScreen();
         };
         nav.appendChild(btn);
       });
     }
 
-    function drawEquity(canvas, equity) {
+    function drawEquity(canvas, equity, baseline) {
+      baseline = baseline != null ? baseline : 1;
       const ctx = canvas.getContext("2d");
       const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
       const h = canvas.height = 220 * (window.devicePixelRatio || 1);
@@ -366,7 +469,7 @@
       const plotW = cw - pad.l - pad.r;
       const plotH = ch - pad.t - pad.b;
       const last = vals[vals.length - 1];
-      const color = last >= 1 ? "#00ff88" : "#ff4466";
+      const color = last >= baseline ? "#00ff88" : "#ff4466";
 
       ctx.strokeStyle = "#30363d";
       ctx.lineWidth = 1;
@@ -389,7 +492,7 @@
 
       ctx.fillStyle = "#7a8899";
       ctx.font = "10px monospace";
-      ctx.fillText("Cumulative ($1 start)", pad.l, 10);
+      ctx.fillText(baseline >= 1000 ? "Equity ($)" : "Cumulative ($1 start)", pad.l, 10);
       ctx.fillText(maxV.toFixed(2), 4, pad.t + 8);
       ctx.fillText(minV.toFixed(2), 4, pad.t + plotH);
       ctx.fillText(equity[0].t, pad.l, ch - 6);
@@ -586,10 +689,368 @@
         .join("");
     }
 
-    function renderStrategy(id) {
-      const s = (payload.strategies || []).find((x) => x.id === id);
-      if (!s) return;
-      const m = s.metrics || {};
+    function renderSummaryBar() {
+      if (!payload) {
+        $("summaryBar").innerHTML = "";
+        return;
+      }
+      const sim = payload.portfolio_sim || {};
+      const cfg = payload.sim_config || {};
+      const r = payload.macro_regime || {};
+      const ab = (r.ang_bekaert || {}).current || "—";
+      const jpm = (r.jpm_quadrant || {}).current || "—";
+      const bw = (r.meta || {}).label || r.current || "neutral";
+      const pnl = sim.pnl_usd != null ? sim.pnl_usd : 0;
+      const pnlCls = pnl >= 0 ? "green" : "red";
+      const status = sim.status || "live";
+      const statusLbl =
+        status === "preview"
+          ? "PREVIEW"
+          : status === "pending_start"
+            ? "PENDING"
+            : "LIVE";
+      $("summaryBar").innerHTML =
+        '<span class="chip ' +
+        pnlCls +
+        '">$1M book <b>' +
+        statusLbl +
+        "</b> · PnL <b>" +
+        (pnl >= 0 ? "+" : "") +
+        "$" +
+        Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 0 }) +
+        "</b> · " +
+        (sim.n_days || 0) +
+        "d · official " +
+        (sim.official_sim_start || cfg.start || "—") +
+        "</span>" +
+        '<span class="chip">Bridgewater <b>' +
+        bw +
+        "</b></span>" +
+        '<span class="chip">BlackRock macro <b>Barra</b></span>' +
+        '<span class="chip">Ang&Bekaert <b>' +
+        ab +
+        "</b></span>" +
+        '<span class="chip">JPM <b>' +
+        jpm +
+        "</b></span>" +
+        '<span class="chip nav-chip" data-goto="book">→ Book · α · WF</span>' +
+        '<span class="chip nav-chip" data-goto="workflow">→ Full regime</span>' +
+        '<span class="chip nav-chip" data-goto="backtest">→ Walk-forward</span>';
+      document.querySelectorAll("#summaryBar .nav-chip").forEach(function (el) {
+        el.onclick = function () {
+          setScreen(el.getAttribute("data-goto"));
+        };
+      });
+    }
+
+    function renderPnLBanner() {
+      const sim = payload.portfolio_sim || {};
+      const cfg = payload.sim_config || {};
+      const pnl = sim.pnl_usd != null ? sim.pnl_usd : 0;
+      const pct = sim.pnl_pct != null ? sim.pnl_pct * 100 : 0;
+      const color = pnl >= 0 ? "#00ff88" : "#ff4466";
+      const statusNote =
+        sim.status === "preview"
+          ? " · <b style='color:#ffaa44'>PREVIEW</b> until official " + (sim.official_sim_start || cfg.start)
+          : sim.status === "pending_start"
+            ? " · starts in " + (sim.days_until_start != null ? sim.days_until_start : "?") + " day(s)"
+            : "";
+      return (
+        '<div class="card" style="border-color:' +
+        color +
+        '"><h2>Paper book · $' +
+        (cfg.capital_usd != null ? (cfg.capital_usd / 1e6).toFixed(1) + "M" : "1M") +
+        " · official from " +
+        (sim.official_sim_start || cfg.start || sim.sim_start || "—") +
+        "</h2>" +
+        (sim.note
+          ? '<p class="desc" style="color:#ffaa44">' + sim.note + "</p>"
+          : "") +
+        '<div class="stats">' +
+        "<span>Equity <b style='color:" +
+        color +
+        "'>$" +
+        (sim.equity_usd != null ? sim.equity_usd.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—") +
+        "</b></span>" +
+        "<span>PnL <b style='color:" +
+        color +
+        "'>" +
+        (pnl >= 0 ? "+" : "") +
+        "$" +
+        Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 0 }) +
+        " (" +
+        (pct >= 0 ? "+" : "") +
+        pct.toFixed(2) +
+        "%)</b></span>" +
+        "<span>Days <b>" +
+        (sim.n_days || 0) +
+        "</b></span>" +
+        "<span>Through <b>" +
+        (sim.last_date || "—") +
+        "</b></span>" +
+        statusNote +
+        "</div>" +
+        (sim.equity_curve && sim.equity_curve.length > 1
+          ? '<canvas id="bookEqChart" style="margin-top:10px"></canvas>'
+          : "") +
+        '<p class="desc">' +
+        (cfg.note || "") +
+        " · Weights: " +
+        JSON.stringify(payload.dynamic_weights || {}) +
+        "</p></div>"
+      );
+    }
+
+    function afterBookChart() {
+      const sim = payload.portfolio_sim || {};
+      const c = document.getElementById("bookEqChart");
+      if (c && sim.equity_curve && sim.equity_curve.length > 1) {
+        drawEquity(c, sim.equity_curve, sim.sim_capital_usd || 1e6);
+      }
+    }
+
+    function tcBanner() {
+      const tc = payload.transaction_costs || {};
+      return (
+        '<div class="card"><h2>Transaction costs</h2><p class="desc">' +
+        (tc.note || "5 bps per buy/sell · 10 bps round-trip on each position change.") +
+        " · <b>" +
+        (tc.fee_bps_per_leg != null ? tc.fee_bps_per_leg : 5) +
+        " bps/leg</b> · <b>" +
+        (tc.round_trip_bps != null ? tc.round_trip_bps : 10) +
+        " bps RT</b></p></div>"
+      );
+    }
+
+    function renderRegimePanel() {
+      const r = payload.macro_regime || {};
+      const meta = r.meta || {};
+      const dist = r.distribution || {};
+      const distTxt = Object.keys(dist)
+        .map((k) => k + " " + dist[k] + "%")
+        .join(" · ");
+      const ab = r.ang_bekaert || {};
+      const jpm = r.jpm_quadrant || {};
+      const abMeta = ab.meta || {};
+      const jpmMeta = jpm.meta || {};
+      const dual =
+        '<div class="card" style="margin-top:12px"><h3>HF regime stack (literature)</h3>' +
+        '<p><b>Ang & Bekaert:</b> <code style="color:#00ff88">' +
+        (abMeta.label || ab.current || "—") +
+        "</code> · " +
+        (abMeta.description || "") +
+        "<br/><span class='desc'>" +
+        (abMeta.pdf || "Markov Regimes - How Regimes Affect Asset Allocation - By Ang and Bekaert.pdf") +
+        "</span></p>" +
+        '<p><b>JPM quadrant:</b> <code style="color:#00ff88">' +
+        (jpmMeta.label || jpm.current || "—") +
+        "</code> · " +
+        (jpmMeta.description || "") +
+        "<br/><span class='desc'>" +
+        (jpmMeta.pdf || "Markov Regimes - JPM Regime-based investing.pdf") +
+        "</span></p></div>";
+      const lit = (r.bridgewater || {});
+      const blk = (r.blackrock || {});
+      const legacy =
+        '<div class="card" style="margin-top:12px"><h3>Bridgewater · BlackRock overlay</h3>' +
+        "<p><b>" +
+        (lit.label || "Bridgewater All Weather") +
+        "</b> — " +
+        (lit.note || "") +
+        "<br/><span class='desc'>PDF: " +
+        (lit.pdf || "—") +
+        "</span></p>" +
+        "<p><b>" +
+        (blk.label || "BlackRock smart beta") +
+        "</b> — " +
+        (blk.note || "") +
+        "<br/><span class='desc'>PDF: " +
+        (blk.pdf || "—") +
+        "</span></p>" +
+        (r.merged_sleeve_tilt
+          ? "<p class='desc'>Merged AB×JPM tilts: <code>" +
+            JSON.stringify(r.merged_sleeve_tilt) +
+            "</code></p>"
+          : "") +
+        "</div>";
+      const cards = (r.all_regimes || [])
+        .map(function (x) {
+          const cur = x.id === r.current ? " current" : "";
+          const tilt = x.sleeve_tilt || {};
+          return (
+            '<div class="regime-card' +
+            cur +
+            '"><b>' +
+            x.label +
+            "</b> (" +
+            x.id +
+            ")<br/><span class='desc'>" +
+            x.style +
+            "</span><br/>" +
+            x.description +
+            "<br/><i>" +
+            (x.all_weather_weight_hint || "") +
+            "</i><br/>Tilt: whale " +
+            (tilt.whale_flow != null ? tilt.whale_flow : "—") +
+            " · pairs " +
+            (tilt.pairs_stat_arb != null ? tilt.pairs_stat_arb : "—") +
+            " · composite " +
+            (tilt.live_composite != null ? tilt.live_composite : "—") +
+            "</div>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="card"><h2>Macro regime · All Weather (Bridgewater / BlackRock style)</h2>' +
+        '<p class="desc">' +
+        (r.model || "") +
+        " · as of " +
+        (r.as_of || "—") +
+        "</p>" +
+        '<p><b>Current:</b> <code style="color:#00ff88">' +
+        (meta.label || r.current || "neutral") +
+        "</code> · " +
+        (meta.description || "") +
+        "</p>" +
+        '<p class="desc">Lookback mix: ' +
+        (distTxt || "—") +
+        "</p>" +
+        '<div class="regime-grid">' +
+        cards +
+        "</div>" +
+        dual +
+        legacy +
+        "</div>"
+      );
+    }
+
+    function renderAlphaSleevesTable() {
+      const strategies = (payload.strategies || []).filter(function (s) {
+        return ALPHA_IDS.includes(s.id);
+      });
+      if (!strategies.length) {
+        return '<div class="card"><h2>α sleeves (low correlation)</h2><p class="desc">Loading alpha strategies…</p></div>';
+      }
+      const rows = strategies
+        .map(function (s) {
+          const m = s.metrics || {};
+          const wf = s.walk_forward || {};
+          return (
+            "<tr><td>" +
+            s.name +
+            ' <span class="alpha-tag">α</span></td><td>' +
+            s.id +
+            "</td><td>" +
+            fmtNum(m.sharpe) +
+            "</td><td>" +
+            fmtPct(m.cagr) +
+            "</td><td>" +
+            fmtNum(wf.oos_sharpe, 2) +
+            "</td><td>" +
+            (wf.n_folds || 0) +
+            "</td><td>" +
+            (s.data_ok === false ? "pending" : "ok") +
+            "</td></tr>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="card"><h2>α sleeves · low correlation diversifiers</h2>' +
+        '<p class="desc">5 alpha sleeves including 3 new: CS momentum rank, short-term reversal, plus TS mom / POLY MR / vol parity. Click any α tab on the left for detail.</p>' +
+        '<table class="flow-table"><thead><tr><th>Name</th><th>ID</th><th>Sharpe</th><th>CAGR</th><th>WF OOS Sharpe</th><th>Folds</th><th>Data</th></tr></thead><tbody>' +
+        rows +
+        "</tbody></table></div>"
+      );
+    }
+
+    function renderWalkForwardPanel(compact) {
+      const strategies = visibleStrategies();
+      const blocks = strategies
+        .map(function (s) {
+          const wf = s.walk_forward || {};
+          if (!wf.n_folds) {
+            return (
+              '<div class="card"><h2>' +
+              s.name +
+              '</h2><p class="desc">Not enough history for walk-forward (need ~90+ days).</p></div>'
+            );
+          }
+          const folds = (wf.folds || [])
+            .map(function (f) {
+              return (
+                '<div class="wf-fold">' +
+                f.test_start +
+                " → " +
+                f.test_end +
+                " · train Sharpe " +
+                f.train_sharpe +
+                " · OOS " +
+                f.test_sharpe +
+                " · ret " +
+                fmtPct(f.test_return) +
+                "</div>"
+              );
+            })
+            .join("");
+          return (
+            '<div class="card"><h2>' +
+            s.name +
+            " · walk-forward OOS</h2>" +
+            '<div class="stats">' +
+            "<span>Folds <b>" +
+            wf.n_folds +
+            "</b></span>" +
+            "<span>Train/test <b>" +
+            (wf.train_days || "—") +
+            "d / " +
+            (wf.test_days || "—") +
+            "d</b></span>" +
+            "<span>OOS Sharpe <b>" +
+            fmtNum(wf.oos_sharpe, 2) +
+            "</b></span>" +
+            "<span>OOS return <b>" +
+            fmtPct(wf.oos_return) +
+            "</b></span>" +
+            "<span>History <b>" +
+            (wf.history_start || s.start || "—") +
+            " → " +
+            (wf.history_end || s.end || "—") +
+            "</b></span></div>" +
+            (compact ? "" : folds) +
+            "</div>"
+          );
+        })
+        .join("");
+      return blocks;
+    }
+
+    function renderBookScreen() {
+      $("panel").innerHTML =
+        renderPnLBanner() +
+        renderRegimePanel() +
+        renderAlphaSleevesTable() +
+        '<div class="card"><h2>Walk-forward OOS · all strategies</h2><p class="desc">Rolling train/test on longest available history (60d train / 21d test by default).</p></div>' +
+        renderWalkForwardPanel(false);
+      afterBookChart();
+    }
+
+    function renderScreen() {
+      if (!payload) return;
+      renderSummaryBar();
+      if (currentScreen === "strategies") {
+        if (activeId) renderStrategy(activeId);
+        else $("panel").innerHTML = renderPnLBanner() + renderRegimePanel() + renderAlphaSleevesTable();
+        afterBookChart();
+        return;
+      }
+      if (currentScreen === "market") renderMarketScreen();
+      else if (currentScreen === "risk") renderRiskScreen();
+      else if (currentScreen === "backtest") renderBacktestScreen();
+      else if (currentScreen === "workflow") renderWorkflowScreen();
+      else if (currentScreen === "book") renderBookScreen();
+    }
+
+    function renderMarketScreen() {
       const sig = payload.signals || {};
       const raw = payload.signals_raw || {};
       const gate = payload.news_gate || {};
@@ -597,9 +1058,192 @@
       const pairs = payload.pairs_live || {};
       const reasons = payload.gate_reason || {};
       const news = payload.news || {};
-      const ecb = (news.ecb || []).slice(0, 8);
-      const fred = news.fred || [];
       const gateColor = gate.allow_new_trades ? "#00ff88" : "#ff4466";
+      $("panel").innerHTML =
+        renderPnLBanner() +
+        tcBanner() +
+        renderAssetsLive() +
+        renderWhaleDetail(whale) +
+        '<div class="card"><h2>Pairs · detail</h2>' +
+        '<div class="stats">' +
+        "<span>z <b>" + (pairs.spread_z != null ? pairs.spread_z : "—") + "</b></span>" +
+        "<span>DOGE <b>$" + (pairs.doge_price != null ? pairs.doge_price : "—") + "</b></span>" +
+        "<span>WIF <b>$" + (pairs.wif_price != null ? pairs.wif_price : "—") + "</b></span>" +
+        "</div>" +
+        renderChecks(pairs.checks) +
+        "</div>" +
+        '<div class="card signals"><h2>Production execution (news-gated)</h2>' +
+        "<p>Macro gate <code style='color:" + gateColor + "'>" +
+        (gate.label || "—") + " · score " + (gate.score != null ? gate.score : "—") +
+        "</code></p>" +
+        "<p><b>After gate:</b> POLY <code>" + (sig.POLY_GTA != null ? sig.POLY_GTA : "—") +
+        "</code> (raw " + (raw.POLY_GTA != null ? raw.POLY_GTA : "—") + ") · DOGE <code>" +
+        (sig.DOGE != null ? sig.DOGE : "—") + "</code> · WIF <code>" +
+        (sig.WIF != null ? sig.WIF : "—") + "</code></p>" +
+        '<div class="card"><h2>Macro news</h2><ul class="news">' +
+        (news.ecb || []).slice(0, 10).map(function (row) {
+          return "<li><a href='" + (row.url || "#") + "' target='_blank'>" + (row.title || "") + "</a></li>";
+        }).join("") +
+        "</ul></div>";
+      afterBookChart();
+    }
+
+    function renderRiskScreen() {
+      const strategies = visibleStrategies();
+      const blocks = strategies
+        .map(function (s) {
+          return (
+            '<div class="card"><h2>' +
+            s.name +
+            " · R² " +
+            (s.r2_barra != null ? s.r2_barra.toFixed(3) : "—") +
+            "</h2>" +
+            factorBars(s.factors) +
+            "</div>"
+          );
+        })
+        .join("");
+      $("panel").innerHTML =
+        renderPnLBanner() +
+        tcBanner() +
+        renderRegimePanel() +
+        blocks +
+        (function () {
+          const c = payload.strategy_correlation || {};
+          const keys = Object.keys(c);
+          if (!keys.length) return "";
+          let html = '<div class="card"><h2>Strategy correlation (low = better diversifier)</h2><table class="flow-table"><thead><tr><th></th>';
+          keys.forEach(function (k) {
+            html += "<th>" + k.replace("_", " ") + "</th>";
+          });
+          html += "</tr></thead><tbody>";
+          keys.forEach(function (a) {
+            html += "<tr><td>" + a + "</td>";
+            keys.forEach(function (b) {
+              html += "<td>" + (c[a][b] != null ? c[a][b].toFixed(2) : "—") + "</td>";
+            });
+            html += "</tr>";
+          });
+          return html + "</tbody></table></div>";
+        })();
+      afterBookChart();
+    }
+
+    function renderBacktestScreen() {
+      const strategies = visibleStrategies();
+      const charts = strategies
+        .map(function (s) {
+          return (
+            '<div class="card"><h2>' +
+            s.name +
+            '</h2><canvas class="bt-chart" data-id="' +
+            s.id +
+            '"></canvas></div>'
+          );
+        })
+        .join("");
+      $("panel").innerHTML =
+        renderPnLBanner() +
+        tcBanner() +
+        '<div class="card"><h2>Backtest summary · ' +
+        (payload.lookback_days || "—") +
+        " days</h2><p class='desc'>" +
+        (payload.metrics_note || "") +
+        '</p><table class="flow-table"><thead><tr><th>Strategy</th><th>WR</th><th>Sharpe</th><th>CAGR</th><th>Cum</th><th>MaxDD</th><th>WF OOS Sharpe</th><th>WF folds</th><th>Range</th><th>Days</th></tr></thead><tbody>' +
+        strategies
+          .map(function (s) {
+            const m = s.metrics || {};
+            const wf = s.walk_forward || {};
+            return (
+              "<tr><td>" +
+              s.id +
+              "</td><td>" +
+              fmtPct(m.win_rate) +
+              "</td><td>" +
+              fmtNum(m.sharpe) +
+              "</td><td>" +
+              fmtPct(m.cagr) +
+              "</td><td>" +
+              fmtPct(m.total_return) +
+              "</td><td>" +
+              fmtPct(m.max_dd) +
+              "</td><td>" +
+              fmtNum(wf.oos_sharpe, 2) +
+              "</td><td>" +
+              (wf.n_folds || 0) +
+              "</td><td>" +
+              (s.start || "—") +
+              " → " +
+              (s.end || "—") +
+              "</td><td>" +
+              (s.n_days || "—") +
+              "</td></tr>"
+            );
+          })
+          .join("") +
+        "</tbody></table></div>" +
+        '<div class="bt-row">' +
+        charts +
+        "</div>" +
+        renderWalkForwardPanel(false);
+      strategies.forEach(function (s) {
+        const c = document.querySelector('.bt-chart[data-id="' + s.id + '"]');
+        if (c) drawEquity(c, s.equity);
+      });
+      afterBookChart();
+    }
+
+    function renderWorkflowScreen() {
+      const steps = (payload.workflow || [])
+        .map(function (st) {
+          return (
+            '<div class="workflow-step"><b>' +
+            st.title +
+            "</b><br/><span class='desc'>" +
+            st.detail +
+            "</span></div>"
+          );
+        })
+        .join("");
+      $("panel").innerHTML =
+        renderPnLBanner() +
+        tcBanner() +
+        renderRegimePanel() +
+        '<div class="card"><h2>Production workflow</h2>' +
+        steps +
+        '<p class="desc" style="margin-top:12px">Dynamic weights this refresh: <b>' +
+        JSON.stringify(payload.dynamic_weights || {}) +
+        "</b></p>" +
+        '<ul class="desc">' +
+        (payload.research_refs || [])
+          .map(function (r) {
+            if (typeof r === "string") return "<li>" + r + "</li>";
+            return (
+              "<li><b>" +
+              (r.cite || r.id || "") +
+              "</b> — " +
+              (r.use || "") +
+              " · <i>" +
+              (r.pdf || "") +
+              "</i></li>"
+            );
+          })
+          .join("") +
+        "</ul></div>" +
+        '<div class="card"><h2>Production sleeves</h2><p class="desc">' +
+        (payload.production_strategies || []).join(" → ") +
+        " · CLOB " +
+        JSON.stringify(payload.clob_health || {}) +
+        "</p></div>";
+      afterBookChart();
+    }
+
+    function renderStrategy(id) {
+      const s = (payload.strategies || []).find((x) => x.id === id);
+      if (!s) return;
+      const m = s.metrics || {};
+      const sig = payload.signals || {};
+      const gateColor = (payload.news_gate || {}).allow_new_trades ? "#00ff88" : "#ff4466";
       const dataWarn =
         s.data_ok === false
           ? '<p class="desc" style="color:#ff8866">Data pending: ' +
@@ -608,6 +1252,7 @@
           : "";
 
       $("panel").innerHTML =
+        renderPnLBanner() +
         '<div class="card">' +
         "<h2>" +
         s.name +
@@ -643,8 +1288,31 @@
         "<span>Days <b>" +
         (s.n_days || "—") +
         "</b></span>" +
-        "</div></div>" +
-        renderAssetsLive() +
+        "</div>" +
+        (function () {
+          const sp = s.sim_pnl || {};
+          if (!sp.n_days) return "";
+          return (
+            '<p class="desc">Sim PnL since ' +
+            (sp.sim_start || "") +
+            ": <b style='color:" +
+            (sp.pnl_usd >= 0 ? "#00ff88" : "#ff4466") +
+            "'>" +
+            (sp.pnl_usd >= 0 ? "+" : "") +
+            "$" +
+            Math.round(sp.pnl_usd || 0).toLocaleString() +
+            "</b></p>"
+          );
+        })() +
+        '<p class="desc">Includes <b>5+5 bps</b> TC · WF OOS Sharpe <b>' +
+        ((s.walk_forward || {}).oos_sharpe != null ? s.walk_forward.oos_sharpe : "—") +
+        "</b></p></div>" +
+        '<div class="card signals"><h2>LIVE signal (now)</h2>' +
+        "<p>After gate: POLY <code>" + (sig.POLY_GTA != null ? sig.POLY_GTA : "—") +
+        "</code> · DOGE <code>" + (sig.DOGE != null ? sig.DOGE : "—") +
+        "</code> · WIF <code>" + (sig.WIF != null ? sig.WIF : "—") +
+        "</code> · gate <code style='color:" + gateColor + "'>" +
+        ((payload.news_gate || {}).label || "—") + "</code></p></div>" +
         '<div class="grid2">' +
         '<div class="card"><h2>Equity curve</h2>' +
         '<canvas id="eqChart"></canvas>' +
@@ -656,73 +1324,39 @@
         '<div class="card"><h2>MSCI Barra-style factor β (ETF proxy)</h2>' +
         factorBars(s.factors) +
         "</div></div>" +
-        '<div class="card"><h2>When do we trade? (news gate)</h2>' +
-        '<ol class="desc" style="line-height:1.6;margin:8px 0 8px 18px">' +
-        "<li><b>Refresh</b> → ECB headlines (+ FRED if API key).</li>" +
-        "<li><b>Macro score</b> [-1,1]: inflation/crisis/tightening → lower.</li>" +
-        "<li><b>Score ≤ −0.35</b> → <span style='color:#ff4466'>block all new orders</span>.</li>" +
-        "<li><b>Score −0.35…0</b> → half size.</li>" +
-        "<li><b>Whale</b>: flow ≥ $12k, ≥4 trades, EMA agrees → POLY ±1.</li>" +
-        "<li><b>Pairs</b>: |z|>2 → DOGE/WIF spread trade.</li>" +
-        "<li>Use <b>Live composite</b> tab for the book we send to CLOB.</li></ol></div>" +
-        renderWhaleDetail(whale) +
-        '<div class="card"><h2>Pairs · detail</h2>' +
-        '<div class="stats">' +
-        "<span>z <b>" + (pairs.spread_z != null ? pairs.spread_z : "—") + "</b></span>" +
-        "<span>DOGE <b>$" + (pairs.doge_price != null ? pairs.doge_price : "—") + "</b></span>" +
-        "<span>WIF <b>$" + (pairs.wif_price != null ? pairs.wif_price : "—") + "</b></span>" +
-        "<span>log(D/W) <b>" + (pairs.log_ratio != null ? pairs.log_ratio : "—") + "</b></span>" +
-        "</div>" +
-        renderChecks(pairs.checks) +
-        "</div>" +
-        '<div class="card signals"><h2>Production execution (news-gated)</h2>' +
-        "<p>Macro gate <code style='color:" + gateColor + "'>" +
-        (gate.label || "—") + " · score " + (gate.score != null ? gate.score : "—") +
-        "</code></p>" +
-        "<p>Whale v2 <code>" + (whale.signal != null ? whale.signal : "—") +
-        "</code> · 7d flow $" + (whale.flow_net_usd != null ? Math.round(whale.flow_net_usd).toLocaleString() : "—") +
-        " · vol $" + (whale.volume_usd != null ? Math.round(whale.volume_usd).toLocaleString() : "—") +
-        " · trades " + (whale.n_trades != null ? whale.n_trades : "—") + "</p>" +
-        "<p>Pairs z <code>" + (pairs.spread_z != null ? pairs.spread_z : "—") +
-        "</code> · DOGE/WIF " + (pairs.doge_price != null ? "$" + pairs.doge_price : "—") +
-        " / " + (pairs.wif_price != null ? "$" + pairs.wif_price : "—") + "</p>" +
-        "<p><b>After gate:</b> POLY <code>" + (sig.POLY_GTA != null ? sig.POLY_GTA : "—") +
-        "</code> (raw " + (raw.POLY_GTA != null ? raw.POLY_GTA : "—") +
-        ", " + (reasons.POLY_GTA || "") + ") · DOGE <code>" +
-        (sig.DOGE != null ? sig.DOGE : "—") + "</code> · WIF <code>" +
-        (sig.WIF != null ? sig.WIF : "—") + "</code></p>" +
-        "<p class='desc'>Production sleeve: " +
-        (payload.production_strategies || []).join(", ") +
-        " · CLOB: " + JSON.stringify(payload.clob_health || {}) + "</p></div>" +
-        '<div class="card"><h2>Macro news (ECB RSS' +
-        (news.fred_api_configured ? " + FRED" : "") +
-        ")</h2><ul class='news'>" +
-        ecb
-          .map(
-            (row) =>
-              "<li><a href='" +
-              (row.url || "#") +
-              "' target='_blank' rel='noopener'>" +
-              (row.title || "") +
-              "</a></li>"
-          )
-          .join("") +
-        fred
-          .map(
-            (r) =>
-              "<li>FRED " +
-              (r.series_id || "") +
-              ": " +
-              (r.value != null ? r.value : "—") +
-              " (" +
-              (r.date || "") +
-              ")</li>"
-          )
-          .join("") +
-        "</ul></div>";
+        (function () {
+          const wf = s.walk_forward || {};
+          if (!wf.n_folds) return "";
+          const folds = (wf.folds || [])
+            .map(function (f) {
+              return (
+                '<div class="wf-fold">' +
+                f.test_start +
+                " → " +
+                f.test_end +
+                " · OOS Sharpe " +
+                f.test_sharpe +
+                " · ret " +
+                fmtPct(f.test_return) +
+                "</div>"
+              );
+            })
+            .join("");
+          return (
+            '<div class="card"><h2>Walk-forward OOS</h2>' +
+            '<div class="stats"><span>Folds <b>' +
+            wf.n_folds +
+            "</b></span><span>OOS Sharpe <b>" +
+            fmtNum(wf.oos_sharpe, 2) +
+            "</b></span></div>" +
+            folds +
+            "</div>"
+          );
+        })();
 
       const canvas = document.getElementById("eqChart");
       if (canvas) drawEquity(canvas, s.equity);
+      afterBookChart();
     }
 
     $("btnRefresh").onclick = fetchLive;

@@ -16,6 +16,8 @@ Share the interactive dashboard (`live_composite` + whale + pairs) with your tea
 **If deploy failed:** Render dashboard → **polymarket-live-dashboard** → **Logs** (build + runtime).  
 Common fix: push latest `render.yaml` + `requirements-live-dashboard.txt`, then **Manual Deploy**.
 
+**Dashboard layout (v2.2):** five top screens — (1) Strategies LIVE, (2) Market, (3) Risk factors + All Weather regime, (4) Backtesting table, (5) Workflow. Transaction costs: **5 bps per leg, 10 bps round-trip** on every position change.
+
 **Optional env vars (Render → Environment):**
 
 | Variable | Purpose |

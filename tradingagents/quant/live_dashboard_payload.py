@@ -17,8 +17,16 @@ from tradingagents.quant.barra_risk_factors import (
     barra_factor_attribution,
     load_barra_factor_returns,
 )
-from tradingagents.quant.live_execution import build_live_composite_returns, build_live_execution_snapshot
+from tradingagents.quant.all_weather_regime import (
+    WORKFLOW_STEPS,
+    build_regime_snapshot,
+    transaction_costs_json,
+)
+from tradingagents.quant.live_execution import build_live_execution_snapshot
+from tradingagents.quant.live_portfolio_sim import portfolio_pnl_snapshot, sim_capital, sim_start_date
 from tradingagents.quant.live_strategies import collect_strategy_returns, fetch_live_data_bundle
+from tradingagents.quant.regime_models import build_dual_regime_snapshot
+from tradingagents.quant.strategy_walk_forward import walk_forward_returns
 from tradingagents.quant.strategy_catalog import DASHBOARD_VERSION, STRATEGY_CATALOG, StrategySpec
 from tradingagents.quant.whale_strategy import daily_whale_flow, strategy_metrics
 
@@ -98,18 +106,28 @@ def _placeholder_tab(spec: StrategySpec, error: str | None) -> dict:
     }
 
 
-def _resolve_returns(spec: StrategySpec, returns_map: dict[str, pd.Series]) -> pd.Series | None:
-    r = returns_map.get(spec.id)
-    if r is not None and not r.dropna().empty:
-        return r
-    if spec.id != "live_composite":
-        return None
-    wr = returns_map.get("whale_flow")
-    pr = returns_map.get("pairs_stat_arb")
-    if wr is None or pr is None or wr.dropna().empty or pr.dropna().empty:
-        return None
-    comp = build_live_composite_returns(wr, pr).dropna()
-    return comp if len(comp) else None
+def _apply_dynamic_composite(
+    returns_map: dict[str, pd.Series],
+    barra: pd.DataFrame,
+) -> tuple[dict[str, pd.Series], dict[str, float], dict]:
+    dual = build_dual_regime_snapshot(barra)
+    merged_tilt = dual.get("merged_sleeve_tilt", {})
+    weights = regime_dynamic_weights(returns_map, merged_tilt, production_only=False)
+    comp = blend_returns(returns_map, weights)
+    out = dict(returns_map)
+    if len(comp):
+        out["live_composite"] = comp
+    return out, weights, dual
+
+
+def _correlation_json(returns_map: dict[str, pd.Series], ids: list[str]) -> dict:
+    cols = {k: returns_map[k] for k in ids if k in returns_map and len(returns_map[k])}
+    if len(cols) < 2:
+        return {}
+    df = pd.DataFrame(cols).dropna(how="all").fillna(0)
+    if len(df) < 20:
+        return {}
+    return {a: {b: round(float(df.corr().loc[a, b]), 3) for b in df.columns} for a in df.columns}
 
 
 def build_strategy_tab_results(
@@ -117,23 +135,24 @@ def build_strategy_tab_results(
     end: str,
     slug: str = DEFAULT_SLUG,
     bundle: dict | None = None,
-) -> tuple[list[dict], pd.DataFrame, dict[str, str]]:
+) -> tuple[list[dict], pd.DataFrame, dict[str, str], dict[str, pd.Series], dict[str, float]]:
     """Build one tab per catalog entry; placeholders when a leg fails."""
     if bundle is None:
         bundle = fetch_live_data_bundle(start, end, slug)
     returns_map, errors = collect_strategy_returns(start, end, slug, bundle=bundle)
     barra = load_barra_factor_returns(start, end)
+    returns_map, dynamic_weights, _dual = _apply_dynamic_composite(returns_map, barra)
     results: list[dict] = []
     for spec in STRATEGY_CATALOG:
         if not spec.runnable:
             continue
-        r = _resolve_returns(spec, returns_map)
-        if r is None:
+        r = returns_map.get(spec.id)
+        if r is None or r.dropna().empty:
             err = errors.get(spec.id) or errors.get("whale_flow") or errors.get("pairs_stat_arb")
             results.append(_placeholder_tab(spec, err))
             continue
         results.append(_tab_from_returns(spec, r, barra))
-    return results, barra, errors
+    return results, barra, errors, returns_map, dynamic_weights
 
 
 def _spot_snapshot(series: pd.Series | None, unit: str = "USD") -> dict:
@@ -266,7 +285,10 @@ def build_live_payload(
     as_of = now.strftime("%Y-%m-%d %H:%M %Z")
 
     bundle = fetch_live_data_bundle(start, end, slug)
-    tab_results, barra, fetch_errors = build_strategy_tab_results(start, end, slug, bundle=bundle)
+    tab_results, barra, fetch_errors, returns_map, dynamic_weights = build_strategy_tab_results(
+        start, end, slug, bundle=bundle
+    )
+    regime_snap = {**build_regime_snapshot(barra), **build_dual_regime_snapshot(barra)}
 
     exec_snap = build_live_execution_snapshot(
         bundle["flow"],
@@ -314,11 +336,18 @@ def build_live_payload(
             entry["start"] = str(res["returns"].index.min().date())
             entry["end"] = str(res["returns"].index.max().date())
             entry["n_days"] = int(len(res["returns"]))
+            entry["walk_forward"] = walk_forward_returns(res["returns"])
+            entry["sim_pnl"] = portfolio_pnl_snapshot(res["returns"])
         else:
             entry["start"] = None
             entry["end"] = None
             entry["n_days"] = 0
+            entry["walk_forward"] = {}
+            entry["sim_pnl"] = portfolio_pnl_snapshot(pd.Series(dtype=float))
         strategies.append(entry)
+
+    book_returns = returns_map.get("live_composite", pd.Series(dtype=float))
+    portfolio_sim = portfolio_pnl_snapshot(book_returns)
 
     return {
         "dashboard_version": DASHBOARD_VERSION,
@@ -332,6 +361,61 @@ def build_live_payload(
             f"Tab metrics = backtest over last {lookback_days} calendar days "
             f"({start} → {end}), recomputed on each refresh — not tick-level live PnL."
         ),
+        "transaction_costs": transaction_costs_json(),
+        "macro_regime": regime_snap,
+        "dynamic_weights": dynamic_weights,
+        "strategy_correlation": _correlation_json(returns_map, list(dynamic_weights.keys())),
+        "portfolio_sim": portfolio_sim,
+        "sim_config": {
+            "start": sim_start_date(),
+            "capital_usd": sim_capital(),
+            "note": "Paper book PnL from sim start using composite daily returns (5+5 bps TC included).",
+        },
+        "research_refs": [
+            {
+                "id": "ab2002",
+                "cite": "Ang & Bekaert (2002) JFE — International Asset Allocation with Regime Shifts",
+                "pdf": "Markov Regimes - How Regimes Affect Asset Allocation - By Ang and Bekaert.pdf",
+                "use": "2-state AB bull/bear → beta scaling",
+            },
+            {
+                "id": "jpm_regime",
+                "cite": "JPMorgan AM — Regime-based investing",
+                "pdf": "Markov Regimes - JPM Regime-based investing.pdf",
+                "use": "4-quadrant growth×inflation sleeve rotation",
+            },
+            {
+                "id": "biz_cycle",
+                "cite": "Macro Regimes — Dynamic asset allocation through the business cycle",
+                "pdf": "Macro Regimes - Dynamic_Asset_Allocation_Through_the_Business_Cycle.pdf",
+                "use": "Stagflation / Goldilocks quadrant tilts",
+            },
+            {
+                "id": "wq101_cs",
+                "cite": "Kakushadze (2016) — 101 Formulaic Alphas (WorldQuant)",
+                "pdf": "Paper - 101 Alphas - WorldQuant World Quant.pdf",
+                "use": "cs_momentum_rank sleeve",
+            },
+            {
+                "id": "wq101_rev",
+                "cite": "Lehmann (1990) + WorldQuant Alpha #12 reversal family",
+                "pdf": "Paper - 101 Alphas - WorldQuant World Quant.pdf",
+                "use": "short_term_reversal sleeve (uncorrelated to 20d TS mom)",
+            },
+            {
+                "id": "moskowitz2012",
+                "cite": "Moskowitz, Ooi & Pedersen (2012) — Time series momentum",
+                "pdf": "Journal of Financial Economics",
+                "use": "ts_momentum_meme sleeve",
+            },
+            {
+                "id": "ang_smart_beta",
+                "cite": "Andrew Ang — Smart Beta (BlackRock guide)",
+                "pdf": "Smart Beta - Blackrock Guide by Andrew Ang.pdf",
+                "use": "vol_risk_parity inverse-vol weights",
+            },
+        ],
+        "workflow": WORKFLOW_STEPS,
         "assets_live": assets_live,
         "catalog_ids": [s.id for s in STRATEGY_CATALOG if s.runnable],
         "strategies": strategies,

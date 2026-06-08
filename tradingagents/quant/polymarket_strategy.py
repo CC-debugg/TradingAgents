@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from tradingagents.dataflows.nautilus_data import get_nautilus_data_online
+from tradingagents.quant.trading_costs import FEE_BPS_PER_LEG
 
 
 @dataclass
@@ -28,7 +29,7 @@ class StrategyConfig:
     target_vol: float = 0.20
     vol_lookback: int = 20
     max_lev: float = 1.5
-    tc_bps: float = 10.0
+    tc_bps: float = FEE_BPS_PER_LEG
     risk_free: float = 0.04
 
 

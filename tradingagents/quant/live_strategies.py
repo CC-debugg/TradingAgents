@@ -12,7 +12,13 @@ from tradingagents.dataflows.polymarket_whale import (
     fetch_large_trades_history,
     fetch_market_meta,
 )
-from tradingagents.quant.live_execution import build_live_composite_returns
+from tradingagents.quant.alpha_sleeves import (
+    cross_sectional_momentum_returns,
+    poly_mean_reversion_returns,
+    short_term_reversal_returns,
+    ts_momentum_meme_returns,
+    vol_risk_parity_meme_returns,
+)
 from tradingagents.quant.pairs_stat_arb import pairs_spread_returns_v2
 from tradingagents.quant.polymarket_strategy import StrategyConfig, load_universe_prices
 from tradingagents.quant.whale_strategy import (
@@ -167,14 +173,30 @@ def collect_strategy_returns(
             out["pairs_stat_arb"] = pairs_spread_returns_v2(doge, wif)
         except Exception as exc:
             errors["pairs_stat_arb"] = str(exc)
+        try:
+            out["ts_momentum_meme"] = ts_momentum_meme_returns(doge, wif)
+        except Exception as exc:
+            errors["ts_momentum_meme"] = str(exc)
+        try:
+            out["vol_risk_parity"] = vol_risk_parity_meme_returns(doge, wif)
+        except Exception as exc:
+            errors["vol_risk_parity"] = str(exc)
+        try:
+            out["cs_momentum_rank"] = cross_sectional_momentum_returns(doge, wif)
+        except Exception as exc:
+            errors["cs_momentum_rank"] = str(exc)
+        try:
+            out["short_term_reversal"] = short_term_reversal_returns(doge, wif)
+        except Exception as exc:
+            errors["short_term_reversal"] = str(exc)
     else:
         errors.setdefault("pairs_stat_arb", "missing DOGE or WIF prices")
 
-    if "whale_flow" in out and "pairs_stat_arb" in out:
+    if len(poly):
         try:
-            out["live_composite"] = build_live_composite_returns(out["whale_flow"], out["pairs_stat_arb"])
+            out["poly_mean_reversion"] = poly_mean_reversion_returns(poly)
         except Exception as exc:
-            errors["live_composite"] = str(exc)
+            errors["poly_mean_reversion"] = str(exc)
 
     return _clean_returns(out), errors
 
