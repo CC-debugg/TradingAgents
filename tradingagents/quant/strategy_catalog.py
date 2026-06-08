@@ -21,10 +21,9 @@ STRATEGY_CATALOG: list[StrategySpec] = [
         "live_composite",
         "Live composite (whale + pairs · news-gated)",
         "PM · PRODUCTION",
-        "Default for real money: 40% whale v2 + 60% pairs v2, regime-tilted. "
-        "Orders only when macro news gate allows. Research α sleeves in separate tabs.",
+        "Default for real money: 40% whale v2 + 60% pairs v2. Orders only when macro news gate allows.",
         True,
-        "live_execution.py · regime_models Ang/JPM + Bridgewater/BlackRock overlay",
+        "live_execution.py — use this sleeve for CLOB",
         True,
     ),
     StrategySpec(

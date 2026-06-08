@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <!-- build: __DASHBOARD_VERSION__ -->
   <title>Strategy Tabs · LIVE · Production</title>
   <style>
     :root {
@@ -200,7 +203,7 @@
   <div class="loading-overlay" id="overlay">Loading live data…</div>
   <header>
     <div>
-      <h1>PRODUCTION · whale + pairs · news-gated · regime · v2.5</h1>
+      <h1>PRODUCTION · whale + pairs · news-gated · v2.1</h1>
       <div class="meta" id="asOf">As of —</div>
     </div>
     <div class="actions">
@@ -209,11 +212,7 @@
       <span id="status"></span>
     </div>
   </header>
-  <div id="staleWarn" style="display:none;background:#3d1f28;color:#ff4466;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d">
-    Server is running <b>old Python code</b> (7 strategies / all OFF). In terminal:
-    <code>kill $(lsof -t -i:8765)</code> then
-    <code>python scripts/polymarket_meme_run.py live-app</code> — then Cmd+Shift+R.
-  </div>
+  <div id="staleWarn" style="display:none;background:#3d1f28;color:#ff4466;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d"></div>
   <div id="dataWarn" style="display:none;background:#2a2418;color:#ffaa44;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d"></div>
   <main>
     <nav id="tabs"></nav>
@@ -225,7 +224,7 @@
     const API = "/api/live";
     const PROD_IDS = ["live_composite", "whale_flow", "pairs_stat_arb"];
     const ALPHA_IDS = ["ts_momentum_meme", "cs_momentum_rank", "short_term_reversal", "poly_mean_reversion", "vol_risk_parity"];
-    const EXPECT_VERSION = "2.5-whale-pairs-regime";
+    const EXPECT_VERSION = "__DASHBOARD_VERSION__";
     let payload = null;
     let activeId = null;
     let autoTimer = null;
@@ -305,8 +304,17 @@
         checkStale(data);
         checkDataWarn(data);
         $("asOf").textContent =
-          "As of " + data.as_of_ny + " · v" + (data.dashboard_version || "?") +
-          " · Universe: " + (data.universe || []).join(", ");
+          "As of " + data.as_of_ny + " · " + (data.dashboard_version || "?") +
+          " · Universe: " + (data.universe || []).join(", ") +
+          " · scroll ↓ for regime · $1M · α sleeves";
+        if (data.dashboard_version && data.dashboard_version !== EXPECT_VERSION) {
+          var k = "reload_" + data.dashboard_version;
+          if (!sessionStorage.getItem(k)) {
+            sessionStorage.setItem(k, "1");
+            location.reload();
+            return;
+          }
+        }
         renderTabs();
         activeId = "live_composite";
         const hasComposite = (data.strategies || []).some((s) => s.id === "live_composite");
@@ -339,6 +347,13 @@
         return (b.live_production ? 1 : 0) - (a.live_production ? 1 : 0);
       });
       sorted.forEach((s) => {
+        if (s.id === ALPHA_IDS[0]) {
+          const sep = document.createElement("div");
+          sep.className = "desc";
+          sep.style.cssText = "padding:8px 12px 4px;font-size:0.65rem;color:#7a8899";
+          sep.textContent = "— α sleeves (HF literature) —";
+          nav.appendChild(sep);
+        }
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "tab-btn" + (s.id === activeId ? " active" : "");
@@ -689,25 +704,24 @@
           : "";
 
       const wf = s.walk_forward || {};
-      const extras =
+      const alphaWf =
+        ALPHA_IDS.includes(id) && wf.n_folds
+          ? (function () {
+              const folds = (wf.folds || []).map(function (f) {
+                return '<div class="wf-fold">' + f.test_start + " → " + f.test_end +
+                  " · OOS Sharpe " + f.test_sharpe + " · ret " + fmtPct(f.test_return) + "</div>";
+              }).join("");
+              return '<div class="card"><h2>Walk-forward OOS</h2><div class="stats"><span>Folds <b>' +
+                wf.n_folds + "</b></span><span>OOS Sharpe <b>" + fmtNum(wf.oos_sharpe, 2) +
+                "</b></span></div>" + folds + "</div>";
+            })()
+          : "";
+      const compositeAddons =
         id === "live_composite"
           ? renderPnLBanner() + renderRegimePanel() + renderAlphaSleevesTable()
-          : ALPHA_IDS.includes(id)
-            ? (function () {
-                const folds = (wf.folds || []).map(function (f) {
-                  return '<div class="wf-fold">' + f.test_start + " → " + f.test_end +
-                    " · OOS Sharpe " + f.test_sharpe + " · ret " + fmtPct(f.test_return) + "</div>";
-                }).join("");
-                return folds
-                  ? '<div class="card"><h2>Walk-forward OOS</h2><div class="stats"><span>Folds <b>' +
-                    (wf.n_folds || 0) + "</b></span><span>OOS Sharpe <b>" + fmtNum(wf.oos_sharpe, 2) +
-                    "</b></span></div>" + folds + "</div>"
-                  : "";
-              })()
-            : "";
+          : "";
 
       $("panel").innerHTML =
-        extras +
         '<div class="card">' +
         "<h2>" +
         s.name +
@@ -759,6 +773,8 @@
         '<div class="card"><h2>MSCI Barra-style factor β (ETF proxy)</h2>' +
         factorBars(s.factors) +
         "</div></div>" +
+        compositeAddons +
+        alphaWf +
         (PROD_IDS.includes(id)
           ? '<div class="card"><h2>When do we trade? (news gate)</h2>' +
             '<ol class="desc" style="line-height:1.6;margin:8px 0 8px 18px">' +

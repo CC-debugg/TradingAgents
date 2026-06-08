@@ -162,8 +162,11 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
             if not os.path.isfile(index):
                 self._send_json(404, {"error": f"missing {index}"})
                 return
-            with open(index, "rb") as f:
-                self._send_bytes(200, f.read(), "text/html; charset=utf-8")
+            from tradingagents.quant.strategy_catalog import DASHBOARD_VERSION
+
+            with open(index, encoding="utf-8") as f:
+                html = f.read().replace("__DASHBOARD_VERSION__", DASHBOARD_VERSION)
+            self._send_bytes(200, html.encode("utf-8"), "text/html; charset=utf-8")
             return
 
         self._send_json(404, {"error": "not found", "path": path})
