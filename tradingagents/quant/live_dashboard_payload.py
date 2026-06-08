@@ -25,6 +25,7 @@ from tradingagents.quant.all_weather_regime import (
 from tradingagents.quant.live_execution import build_live_execution_snapshot
 from tradingagents.quant.live_portfolio_sim import portfolio_pnl_snapshot, sim_capital, sim_start_date
 from tradingagents.quant.live_strategies import collect_strategy_returns, fetch_live_data_bundle
+from tradingagents.quant.regime_allocator import blend_returns, regime_dynamic_weights
 from tradingagents.quant.regime_models import build_dual_regime_snapshot
 from tradingagents.quant.strategy_walk_forward import walk_forward_returns
 from tradingagents.quant.strategy_catalog import DASHBOARD_VERSION, STRATEGY_CATALOG, StrategySpec
