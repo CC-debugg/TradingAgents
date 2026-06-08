@@ -110,15 +110,17 @@ def _placeholder_tab(spec: StrategySpec, error: str | None) -> dict:
 def _apply_dynamic_composite(
     returns_map: dict[str, pd.Series],
     barra: pd.DataFrame,
-) -> tuple[dict[str, pd.Series], dict[str, float], dict]:
+) -> tuple[dict[str, pd.Series], dict[str, float], dict, dict[str, float]]:
     dual = build_dual_regime_snapshot(barra)
     merged_tilt = dual.get("merged_sleeve_tilt", {})
-    weights = regime_dynamic_weights(returns_map, merged_tilt, production_only=False)
-    comp = blend_returns(returns_map, weights)
+    # Production book: whale + pairs only (matches v2.1 positive PROD metrics).
+    prod_weights = regime_dynamic_weights(returns_map, merged_tilt, production_only=True)
+    comp = blend_returns(returns_map, prod_weights)
+    research_weights = regime_dynamic_weights(returns_map, merged_tilt, production_only=False)
     out = dict(returns_map)
     if len(comp):
         out["live_composite"] = comp
-    return out, weights, dual
+    return out, prod_weights, dual, research_weights
 
 
 def _correlation_json(returns_map: dict[str, pd.Series], ids: list[str]) -> dict:
@@ -142,7 +144,7 @@ def build_strategy_tab_results(
         bundle = fetch_live_data_bundle(start, end, slug)
     returns_map, errors = collect_strategy_returns(start, end, slug, bundle=bundle)
     barra = load_barra_factor_returns(start, end)
-    returns_map, dynamic_weights, _dual = _apply_dynamic_composite(returns_map, barra)
+    returns_map, prod_weights, _dual, research_weights = _apply_dynamic_composite(returns_map, barra)
     results: list[dict] = []
     for spec in STRATEGY_CATALOG:
         if not spec.runnable:
@@ -153,7 +155,7 @@ def build_strategy_tab_results(
             results.append(_placeholder_tab(spec, err))
             continue
         results.append(_tab_from_returns(spec, r, barra))
-    return results, barra, errors, returns_map, dynamic_weights
+    return results, barra, errors, returns_map, prod_weights, research_weights
 
 
 def _spot_snapshot(series: pd.Series | None, unit: str = "USD") -> dict:
@@ -286,7 +288,7 @@ def build_live_payload(
     as_of = now.strftime("%Y-%m-%d %H:%M %Z")
 
     bundle = fetch_live_data_bundle(start, end, slug)
-    tab_results, barra, fetch_errors, returns_map, dynamic_weights = build_strategy_tab_results(
+    tab_results, barra, fetch_errors, returns_map, prod_weights, research_weights = build_strategy_tab_results(
         start, end, slug, bundle=bundle
     )
     regime_snap = {**build_regime_snapshot(barra), **build_dual_regime_snapshot(barra)}
@@ -364,8 +366,11 @@ def build_live_payload(
         ),
         "transaction_costs": transaction_costs_json(),
         "macro_regime": regime_snap,
-        "dynamic_weights": dynamic_weights,
-        "strategy_correlation": _correlation_json(returns_map, list(dynamic_weights.keys())),
+        "dynamic_weights": prod_weights,
+        "dynamic_weights_research": research_weights,
+        "strategy_correlation": _correlation_json(
+            returns_map, list({**prod_weights, **research_weights}.keys())
+        ),
         "portfolio_sim": portfolio_sim,
         "sim_config": {
             "start": sim_start_date(),

@@ -19,11 +19,12 @@ class StrategySpec:
 STRATEGY_CATALOG: list[StrategySpec] = [
     StrategySpec(
         "live_composite",
-        "Live composite (dual regime + low-corr blend)",
+        "Live composite (whale + pairs · news-gated)",
         "PM · PRODUCTION",
-        "Dynamic weights: Ang & Bekaert + JPM quadrant tilts × inverse-correlation. News-gated for CLOB.",
+        "Default for real money: 40% whale v2 + 60% pairs v2, regime-tilted. "
+        "Orders only when macro news gate allows. Research α sleeves in separate tabs.",
         True,
-        "regime_models.build_dual_regime_snapshot · regime_allocator.blend_returns",
+        "live_execution.py · regime_models Ang/JPM + Bridgewater/BlackRock overlay",
         True,
     ),
     StrategySpec(
@@ -91,4 +92,4 @@ STRATEGY_CATALOG: list[StrategySpec] = [
     ),
 ]
 
-DASHBOARD_VERSION = "2.4-dual-regime"
+DASHBOARD_VERSION = "2.5-whale-pairs-regime"
