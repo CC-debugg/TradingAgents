@@ -22,13 +22,20 @@ from tradingagents.quant.all_weather_regime import (
     build_regime_snapshot,
     transaction_costs_json,
 )
+from tradingagents.quant.hf_manager import (
+    equal_weight_allocation,
+    equal_weight_returns,
+    hf_manager_returns,
+)
 from tradingagents.quant.live_execution import build_live_execution_snapshot
 from tradingagents.quant.live_portfolio_sim import portfolio_pnl_snapshot, sim_capital, sim_start_date
 from tradingagents.quant.live_strategies import collect_strategy_returns, fetch_live_data_bundle
 from tradingagents.quant.regime_allocator import blend_returns, regime_dynamic_weights
 from tradingagents.quant.regime_models import build_dual_regime_snapshot
+from tradingagents.quant.strategy_audit import build_strategy_audit
 from tradingagents.quant.strategy_walk_forward import walk_forward_returns
 from tradingagents.quant.strategy_catalog import DASHBOARD_VERSION, STRATEGY_CATALOG, StrategySpec
+from tradingagents.quant.trading_costs import ROUND_TRIP_BPS
 from tradingagents.quant.whale_strategy import daily_whale_flow, strategy_metrics
 
 NY = ZoneInfo("America/New_York")
@@ -120,7 +127,15 @@ def _apply_dynamic_composite(
     out = dict(returns_map)
     if len(comp):
         out["live_composite"] = comp
-    return out, prod_weights, dual, research_weights
+
+    eq_ret = equal_weight_returns(out)
+    if len(eq_ret):
+        out["multi_strategy_index"] = eq_ret
+    hf_ret, hf_weights = hf_manager_returns(out, merged_tilt)
+    if len(hf_ret):
+        out["hf_manager_book"] = hf_ret
+
+    return out, prod_weights, dual, research_weights, hf_weights
 
 
 def _correlation_json(returns_map: dict[str, pd.Series], ids: list[str]) -> dict:
@@ -138,13 +153,15 @@ def build_strategy_tab_results(
     end: str,
     slug: str = DEFAULT_SLUG,
     bundle: dict | None = None,
-) -> tuple[list[dict], pd.DataFrame, dict[str, str], dict[str, pd.Series], dict[str, float]]:
+) -> tuple[list[dict], pd.DataFrame, dict[str, str], dict[str, pd.Series], dict[str, float], dict[str, float]]:
     """Build one tab per catalog entry; placeholders when a leg fails."""
     if bundle is None:
         bundle = fetch_live_data_bundle(start, end, slug)
     returns_map, errors = collect_strategy_returns(start, end, slug, bundle=bundle)
     barra = load_barra_factor_returns(start, end)
-    returns_map, prod_weights, _dual, research_weights = _apply_dynamic_composite(returns_map, barra)
+    returns_map, prod_weights, _dual, research_weights, hf_weights = _apply_dynamic_composite(
+        returns_map, barra
+    )
     results: list[dict] = []
     for spec in STRATEGY_CATALOG:
         if not spec.runnable:
@@ -155,7 +172,7 @@ def build_strategy_tab_results(
             results.append(_placeholder_tab(spec, err))
             continue
         results.append(_tab_from_returns(spec, r, barra))
-    return results, barra, errors, returns_map, prod_weights, research_weights
+    return results, barra, errors, returns_map, prod_weights, research_weights, hf_weights
 
 
 def _spot_snapshot(series: pd.Series | None, unit: str = "USD") -> dict:
@@ -288,10 +305,12 @@ def build_live_payload(
     as_of = now.strftime("%Y-%m-%d %H:%M %Z")
 
     bundle = fetch_live_data_bundle(start, end, slug)
-    tab_results, barra, fetch_errors, returns_map, prod_weights, research_weights = build_strategy_tab_results(
+    tab_results, barra, fetch_errors, returns_map, prod_weights, research_weights, hf_weights = build_strategy_tab_results(
         start, end, slug, bundle=bundle
     )
     regime_snap = {**build_regime_snapshot(barra), **build_dual_regime_snapshot(barra)}
+    strategy_audit = build_strategy_audit(returns_map)
+    equal_weights = equal_weight_allocation(returns_map)
 
     exec_snap = build_live_execution_snapshot(
         bundle["flow"],
@@ -319,6 +338,8 @@ def build_live_payload(
     for res in tab_results:
         spec: StrategySpec = res["spec"]
         m = res["metrics"]
+        audit_entry = (strategy_audit.get("entries") or {}).get(spec.id, {})
+        audit_m = audit_entry.get("metrics") or {}
         data_ok = bool(res.get("data_ok", True))
         entry = {
             **_spec_json(spec),
@@ -330,6 +351,10 @@ def build_live_payload(
                 "cagr": round(float(m.get("cagr", 0)), 4),
                 "total_return": round(float(m.get("total_return", 0)), 4),
                 "max_dd": round(float(m.get("max_dd", 0)), 4),
+                "vol_ann": round(float(audit_m.get("vol_ann", 0)), 4),
+                "n_trades": int(audit_m.get("n_trades", m.get("n_trades", 0))),
+                "turnover": round(float(audit_m.get("turnover", 0)), 4),
+                "tc_drag_bps": round(float(audit_m.get("tc_drag_bps", 0)), 1),
             },
             "r2_barra": round(float(res.get("r2", 0)), 4),
             "equity": res["equity"],
@@ -349,8 +374,18 @@ def build_live_payload(
             entry["sim_pnl"] = portfolio_pnl_snapshot(pd.Series(dtype=float))
         strategies.append(entry)
 
-    book_returns = returns_map.get("live_composite", pd.Series(dtype=float))
-    portfolio_sim = portfolio_pnl_snapshot(book_returns)
+    index_returns = returns_map.get("multi_strategy_index", pd.Series(dtype=float))
+    hf_returns = returns_map.get("hf_manager_book", pd.Series(dtype=float))
+    portfolio_sim = portfolio_pnl_snapshot(
+        index_returns,
+        start=sim_start_date(),
+        capital=sim_capital(),
+    )
+    hf_manager_sim = portfolio_pnl_snapshot(
+        hf_returns,
+        start=sim_start_date(),
+        capital=sim_capital(),
+    )
 
     return {
         "dashboard_version": DASHBOARD_VERSION,
@@ -368,14 +403,24 @@ def build_live_payload(
         "macro_regime": regime_snap,
         "dynamic_weights": prod_weights,
         "dynamic_weights_research": research_weights,
-        "strategy_correlation": _correlation_json(
-            returns_map, list({**prod_weights, **research_weights}.keys())
+        "allocation": {
+            "equal": equal_weights,
+            "hf_manager": hf_weights,
+            "prod": prod_weights,
+        },
+        "strategy_audit": strategy_audit,
+        "strategy_correlation": strategy_audit.get("correlation") or _correlation_json(
+            returns_map, list(equal_weights.keys())
         ),
         "portfolio_sim": portfolio_sim,
+        "hf_manager_sim": hf_manager_sim,
         "sim_config": {
             "start": sim_start_date(),
             "capital_usd": sim_capital(),
-            "note": "Paper book PnL from sim start using composite daily returns (5+5 bps TC included).",
+            "note": (
+                "Paper book PnL from sim start using Equal-Weight Multi-Strategy Index "
+                f"({ROUND_TRIP_BPS:.0f} bps RT TC included in sleeve returns)."
+            ),
         },
         "research_refs": [
             {

@@ -27,6 +27,24 @@ STRATEGY_CATALOG: list[StrategySpec] = [
         True,
     ),
     StrategySpec(
+        "multi_strategy_index",
+        "Multi-Strategy Index (1/n)",
+        "HF · Equal-weight book",
+        "Equal 1/n blend of all 7 base sleeves. Official $1M paper PnL tracks this index from sim start.",
+        True,
+        "hf_manager.equal_weight_returns · benchmark + paper book",
+        False,
+    ),
+    StrategySpec(
+        "hf_manager_book",
+        "HF Manager (regime dynamic)",
+        "HF · Regime allocator",
+        "Bridgewater + Ang & Bekaert + JPM tilt × inverse-correlation weights across 7 sleeves. Refreshed each /api/live.",
+        True,
+        "hf_manager.hf_manager_returns · regime_allocator",
+        False,
+    ),
+    StrategySpec(
         "whale_flow",
         "Whale flow (conviction v2)",
         "PM / Microstructure",
@@ -91,4 +109,4 @@ STRATEGY_CATALOG: list[StrategySpec] = [
     ),
 ]
 
-DASHBOARD_VERSION = "2.6-alpha-tuned"
+DASHBOARD_VERSION = "2.7-hf-manager-index"

@@ -197,6 +197,36 @@
     .alpha-tag { font-size: 0.6rem; background: #2a2418; color: #ffaa44; padding: 1px 5px; border-radius: 3px; }
     .wf-fold { font-size: 0.7rem; color: var(--muted); margin: 4px 0; }
     .module-toggle { cursor: pointer; color: var(--accent); font-size: 0.75rem; margin-left: 8px; }
+    #stickyBar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #12161c;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      font-size: 0.78rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+    }
+    #stickyBar .chip {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      margin-right: 4px;
+      font-size: 0.68rem;
+    }
+    #stickyBar .chip.green { border-color: var(--green); color: var(--green); }
+    #stickyBar .chip.red { border-color: var(--red); color: var(--red); }
+    .audit-table { width: 100%; font-size: 0.72rem; border-collapse: collapse; }
+    .audit-table th, .audit-table td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: right; }
+    .audit-table th { color: var(--muted); text-align: left; }
+    .corr-grid { display: grid; gap: 1px; font-size: 0.65rem; margin-top: 8px; }
+    .corr-cell { padding: 4px; text-align: center; background: var(--panel); }
+    .corr-head { color: var(--muted); font-size: 0.6rem; }
   </style>
 </head>
 <body>
@@ -214,6 +244,7 @@
   </header>
   <div id="staleWarn" style="display:none;background:#3d1f28;color:#ff4466;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d"></div>
   <div id="dataWarn" style="display:none;background:#2a2418;color:#ffaa44;padding:10px 20px;font-size:0.8rem;border-bottom:1px solid #30363d"></div>
+  <div id="stickyBar" style="display:none"></div>
   <main>
     <nav id="tabs"></nav>
     <section class="content" id="panel">
@@ -223,6 +254,7 @@
   <script>
     const API = "/api/live";
     const PROD_IDS = ["live_composite", "whale_flow", "pairs_stat_arb"];
+    const BOOK_IDS = ["multi_strategy_index", "hf_manager_book"];
     const ALPHA_IDS = ["ts_momentum_meme", "cs_momentum_rank", "short_term_reversal", "poly_mean_reversion", "vol_risk_parity"];
     const EXPECT_VERSION = "__DASHBOARD_VERSION__";
     let payload = null;
@@ -239,8 +271,12 @@
       if (!payload || !payload.strategies) return [];
       const all = payload.strategies.filter((s) => s.runnable !== false);
       return all.sort((a, b) => {
-        if (a.id === "live_composite") return -1;
-        if (b.id === "live_composite") return 1;
+        const order = ["live_composite", "multi_strategy_index", "hf_manager_book"];
+        const ai = order.indexOf(a.id);
+        const bi = order.indexOf(b.id);
+        if (ai >= 0 && bi >= 0) return ai - bi;
+        if (ai >= 0) return -1;
+        if (bi >= 0) return 1;
         const ap = PROD_IDS.includes(a.id) ? 1 : 0;
         const bp = PROD_IDS.includes(b.id) ? 1 : 0;
         return bp - ap;
@@ -305,8 +341,8 @@
         checkDataWarn(data);
         $("asOf").textContent =
           "As of " + data.as_of_ny + " · " + (data.dashboard_version || "?") +
-          " · Universe: " + (data.universe || []).join(", ") +
-          " · scroll ↓ for regime · $1M · α sleeves";
+          " · Universe: " + (data.universe || []).join(", ");
+        renderStickyBar();
         if (data.dashboard_version && data.dashboard_version !== EXPECT_VERSION) {
           var k = "reload_" + data.dashboard_version;
           if (!sessionStorage.getItem(k)) {
@@ -342,8 +378,12 @@
         return;
       }
       const sorted = [...visibleStrategies()].sort((a, b) => {
-        if (a.id === "live_composite") return -1;
-        if (b.id === "live_composite") return 1;
+        const order = ["live_composite", "multi_strategy_index", "hf_manager_book"];
+        const ai = order.indexOf(a.id);
+        const bi = order.indexOf(b.id);
+        if (ai >= 0 && bi >= 0) return ai - bi;
+        if (ai >= 0) return -1;
+        if (bi >= 0) return 1;
         return (b.live_production ? 1 : 0) - (a.live_production ? 1 : 0);
       });
       sorted.forEach((s) => {
@@ -359,7 +399,7 @@
         btn.className = "tab-btn" + (s.id === activeId ? " active" : "");
         const wr = s.metrics && s.metrics.win_rate != null ? (s.metrics.win_rate * 100).toFixed(0) + "%" : "—";
         const prod = isProdStrategy(s);
-        const badge = prod ? "PROD" : "α";
+        const badge = prod ? "PROD" : BOOK_IDS.includes(s.id) ? "BOOK" : "α";
         const badgeClass = prod ? "" : " off";
         btn.innerHTML =
           s.name +
@@ -616,15 +656,50 @@
         .join("");
     }
 
+    function renderStickyBar() {
+      const el = $("stickyBar");
+      if (!payload) { el.style.display = "none"; return; }
+      const sim = payload.portfolio_sim || {};
+      const tc = payload.transaction_costs || {};
+      const r = payload.macro_regime || {};
+      const ab = r.ang_bekaert || {};
+      const jpm = r.jpm_quadrant || {};
+      const bw = r.bridgewater || {};
+      const alloc = payload.allocation || {};
+      const hfW = alloc.hf_manager || {};
+      const hfSummary = Object.keys(hfW).slice(0, 4).map(function (k) {
+        return k.replace(/_/g, " ").slice(0, 12) + " " + (hfW[k] * 100).toFixed(0) + "%";
+      }).join(" · ");
+      const pnl = sim.pnl_usd != null ? sim.pnl_usd : 0;
+      const pnlCls = pnl >= 0 ? "green" : "red";
+      const pnlPct = sim.pnl_pct != null ? (sim.pnl_pct * 100).toFixed(2) : "0";
+      el.style.display = "flex";
+      el.innerHTML =
+        '<span><b style="color:var(--accent)">$1M Paper</b> Equal Index · ' +
+        (sim.official_sim_start || "2026-06-04") + " · " +
+        '<span class="chip ' + pnlCls + '">$' +
+        (sim.equity_usd != null ? Math.round(sim.equity_usd).toLocaleString() : "—") +
+        " (" + (pnl >= 0 ? "+" : "") + pnlPct + "%)</span></span>" +
+        '<span><b>TC</b> ' + (tc.fee_bps_per_leg || 5) + " bps/leg · " +
+        (tc.round_trip_bps || 10) + " bps RT</span>" +
+        '<span><b>Regime</b> ' +
+        '<span class="chip green">' + (bw.label || r.current || "—") + "</span> " +
+        '<span class="chip">' + ((ab.meta || {}).label || ab.current || "AB") + "</span> " +
+        '<span class="chip">' + ((jpm.meta || {}).label || jpm.current || "JPM") + "</span></span>" +
+        '<span><b>HF refresh</b> <span class="desc">' + (hfSummary || JSON.stringify(hfW)) + "</span></span>";
+    }
+
     function renderPnLBanner() {
       const sim = payload.portfolio_sim || {};
       const cfg = payload.sim_config || {};
       const pnl = sim.pnl_usd != null ? sim.pnl_usd : 0;
       const pct = sim.pnl_pct != null ? sim.pnl_pct * 100 : 0;
       const color = pnl >= 0 ? "#00ff88" : "#ff4466";
+      const eq = payload.allocation || {};
       return (
-        '<div class="card" style="border-color:' + color + '"><h2>Paper book · $1M · official from ' +
-        (sim.official_sim_start || cfg.start || "2026-06-04") + "</h2>" +
+        '<div class="card" style="border-color:' + color + '"><h2>Paper book · $1M · Equal-Weight Multi-Strategy Index</h2>' +
+        '<p class="desc">Official start ' + (sim.official_sim_start || cfg.start || "2026-06-04") +
+        " · tracks 1/n blend of 7 base sleeves (not PROD whale+pairs CLOB book).</p>" +
         (sim.note ? '<p class="desc" style="color:#ffaa44">' + sim.note + "</p>" : "") +
         '<div class="stats"><span>Equity <b style="color:' + color + '">$' +
         (sim.equity_usd != null ? sim.equity_usd.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—") +
@@ -632,9 +707,114 @@
         (pnl >= 0 ? "+" : "") + "$" + Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 0 }) +
         " (" + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%)</b></span>" +
         "<span>Days <b>" + (sim.n_days || 0) + "</b></span></div>" +
-        '<p class="desc">PROD weights: ' + JSON.stringify(payload.dynamic_weights || {}) +
-        " · Research blend: " + JSON.stringify(payload.dynamic_weights_research || {}) + "</p></div>"
+        '<p class="desc">Equal weights: ' + JSON.stringify(eq.equal || {}) + "</p></div>"
       );
+    }
+
+    function renderAllocationTable() {
+      const a = payload.allocation || {};
+      const ids = new Set([].concat(
+        Object.keys(a.equal || {}),
+        Object.keys(a.hf_manager || {}),
+        Object.keys(a.prod || {})
+      ));
+      const sorted = Array.from(ids).sort();
+      const rows = sorted.map(function (id) {
+        const e = (a.equal || {})[id];
+        const h = (a.hf_manager || {})[id];
+        const p = (a.prod || {})[id];
+        return "<tr><td>" + id + "</td><td>" +
+          (e != null ? (e * 100).toFixed(1) + "%" : "—") + "</td><td>" +
+          (h != null ? (h * 100).toFixed(1) + "%" : "—") + "</td><td>" +
+          (p != null ? (p * 100).toFixed(1) + "%" : "—") + "</td></tr>";
+      }).join("");
+      return (
+        '<div class="card"><h2>Allocation · Equal / HF Manager / PROD</h2>' +
+        '<table class="audit-table"><thead><tr><th>Sleeve</th><th>Equal 1/n</th><th>HF Manager</th><th>PROD CLOB</th></tr></thead><tbody>' +
+        (rows || "<tr><td colspan='4'>No weights</td></tr>") + "</tbody></table></div>"
+      );
+    }
+
+    function renderAuditTable() {
+      const audit = payload.strategy_audit || {};
+      const rows = (audit.summary || []).map(function (row) {
+        return "<tr><td>" + row.id + "</td><td>" + fmtNum(row.sharpe) +
+          "</td><td>" + fmtPct(row.vol_ann) + "</td><td>" + fmtPct(row.max_dd) +
+          "</td><td>" + (row.n_trades || 0) + "</td><td>" + fmtNum(row.oos_sharpe, 2) +
+          "</td><td>" + fmtNum(row.avg_abs_corr_pairs, 2) + "</td></tr>";
+      }).join("");
+      const warns = (audit.overlap_warnings || []).map(function (w) {
+        return '<p class="desc" style="color:#ffaa44">⚠ ' + w.message + "</p>";
+      }).join("");
+      return (
+        '<div class="card"><h2>Strategy audit · sleeves + books</h2>' + warns +
+        '<table class="audit-table"><thead><tr><th>ID</th><th>Sharpe</th><th>Vol</th><th>MaxDD</th><th>Trades</th><th>WF OOS</th><th>|ρ| vs pairs</th></tr></thead><tbody>' +
+        (rows || "<tr><td colspan='7'>Loading…</td></tr>") + "</tbody></table></div>"
+      );
+    }
+
+    function corrColor(rho) {
+      const v = Math.max(-1, Math.min(1, rho || 0));
+      const t = (v + 1) / 2;
+      const r = Math.round(255 * (1 - t));
+      const g = Math.round(255 * t);
+      return "rgb(" + r + "," + g + ",100)";
+    }
+
+    function renderCorrHeatmap() {
+      const corr = (payload.strategy_audit || {}).correlation || payload.strategy_correlation || {};
+      const ids = Object.keys(corr);
+      if (ids.length < 2) return "";
+      const cols = "repeat(" + (ids.length + 1) + ", minmax(52px, 1fr))";
+      let grid = '<div class="corr-grid" style="grid-template-columns:' + cols + '">';
+      grid += '<div class="corr-cell corr-head"></div>';
+      ids.forEach(function (id) {
+        grid += '<div class="corr-cell corr-head">' + id.replace(/_/g, " ").slice(0, 10) + "</div>";
+      });
+      ids.forEach(function (row) {
+        grid += '<div class="corr-cell corr-head">' + row.replace(/_/g, " ").slice(0, 10) + "</div>";
+        ids.forEach(function (col) {
+          const v = (corr[row] || {})[col];
+          grid += '<div class="corr-cell" style="background:' + corrColor(v) + '">' +
+            (v != null ? v.toFixed(2) : "—") + "</div>";
+        });
+      });
+      grid += "</div>";
+      return '<div class="card"><h2>Correlation · 7 base sleeves</h2>' + grid + "</div>";
+    }
+
+    function renderBookTabExtras(id) {
+      if (id === "multi_strategy_index") {
+        return renderPnLBanner() +
+          '<div class="card"><h2>Equal-weight index</h2><p class="desc">Each of 7 base sleeves gets weight 1/n. ' +
+          "Official $1M paper book tracks this index from sim start.</p></div>";
+      }
+      if (id === "hf_manager_book") {
+        const sim = payload.hf_manager_sim || {};
+        const hf = payload.allocation || {};
+        const pnl = sim.pnl_usd != null ? sim.pnl_usd : 0;
+        const color = pnl >= 0 ? "#00ff88" : "#ff4466";
+        const wf = ((payload.strategy_audit || {}).entries || {}).hf_manager_book || {};
+        const wfData = wf.walk_forward || {};
+        const folds = (wfData.folds || []).map(function (f) {
+          return '<div class="wf-fold">' + f.test_start + " → " + f.test_end +
+            " · OOS Sharpe " + f.test_sharpe + "</div>";
+        }).join("");
+        return (
+          '<div class="card"><h2>HF Manager · regime dynamic book</h2>' +
+          '<p class="desc">Bridgewater All Weather + Ang & Bekaert + JPM quadrant tilts × inverse-correlation overlay. ' +
+          "Refreshed on each /api/live call.</p>" +
+          renderRegimePanel() +
+          '<div class="card" style="border-color:' + color + '"><h2>HF book sim (same $1M start)</h2>' +
+          '<div class="stats"><span>Equity <b style="color:' + color + '">$' +
+          (sim.equity_usd != null ? Math.round(sim.equity_usd).toLocaleString() : "—") +
+          "</b></span><span>PnL <b>" + (pnl >= 0 ? "+" : "") + "$" +
+          Math.abs(pnl).toLocaleString() + "</b></span></div>" +
+          '<p class="desc">Weights: ' + JSON.stringify(hf.hf_manager || {}) + "</p></div>" +
+          (folds ? '<div class="card"><h2>Walk-forward OOS</h2>' + folds + "</div>" : "")
+        );
+      }
+      return "";
     }
 
     function renderRegimePanel() {
@@ -718,8 +898,10 @@
           : "";
       const compositeAddons =
         id === "live_composite"
-          ? renderPnLBanner() + renderRegimePanel() + renderAlphaSleevesTable()
+          ? renderPnLBanner() + renderRegimePanel() + renderAllocationTable() +
+            renderAuditTable() + renderCorrHeatmap() + renderAlphaSleevesTable()
           : "";
+      const bookExtras = renderBookTabExtras(id);
 
       $("panel").innerHTML =
         '<div class="card">' +
@@ -760,6 +942,8 @@
         "<span>WF OOS Sharpe <b>" +
         (wf.oos_sharpe != null ? wf.oos_sharpe : "—") +
         "</b></span>" +
+        (m.vol_ann != null ? "<span>Vol (ann.) <b>" + fmtPct(m.vol_ann) + "</b></span>" : "") +
+        (m.n_trades != null ? "<span>Trades <b>" + m.n_trades + "</b></span>" : "") +
         "</div></div>" +
         (PROD_IDS.includes(id) ? renderAssetsLive() : "") +
         '<div class="grid2">' +
@@ -773,6 +957,7 @@
         '<div class="card"><h2>MSCI Barra-style factor β (ETF proxy)</h2>' +
         factorBars(s.factors) +
         "</div></div>" +
+        bookExtras +
         compositeAddons +
         alphaWf +
         (PROD_IDS.includes(id)
