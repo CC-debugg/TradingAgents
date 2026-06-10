@@ -107,6 +107,16 @@ STRATEGY_CATALOG: list[StrategySpec] = [
         "alpha_sleeves.vol_risk_parity · Ang Smart Beta guide",
         False,
     ),
+    StrategySpec(
+        "rl_tensortrade",
+        "RL sleeve (TensorTrade · research)",
+        "RL · Research track",
+        "Offline Q-learning on DOGE features (MOM/VOL/RSI grid), OOS only, 5 bps/leg TC. "
+        "Trained in py3.12 TensorTrade env — research only, excluded from Equal Index and PROD.",
+        True,
+        "integrations/rl_tensortrade · TensorTrade (Apache 2.0) · Kelly & Xiu ML survey",
+        False,
+    ),
 ]
 
-DASHBOARD_VERSION = "2.7-hf-manager-index"
+DASHBOARD_VERSION = "2.8-rl-purged-audit"

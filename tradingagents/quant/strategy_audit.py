@@ -14,6 +14,7 @@ MAX_WF_FOLDS = 12
 ROLLING_WINDOW = 60
 SPARKLINE_POINTS = 40
 OVERLAP_CORR_THRESHOLD = 0.6
+EMBARGO_DAYS = 3
 
 
 def _annualized_vol(returns: pd.Series) -> float:
@@ -88,6 +89,71 @@ def _adaptive_walk_forward(returns: pd.Series) -> dict:
     return wf
 
 
+def purged_walk_forward_returns(
+    returns: pd.Series,
+    train_days: int = 60,
+    test_days: int = 21,
+    embargo_days: int = EMBARGO_DAYS,
+) -> dict:
+    """
+    Purged walk-forward (Lopez de Prado, Advances in Financial ML ch.7):
+    an embargo gap between train end and test start removes leakage from
+    overlapping/serially-correlated observations.
+    """
+    r = returns.dropna().sort_index()
+    idx = pd.DatetimeIndex(r.index)
+    n = len(idx)
+    if n < train_days + embargo_days + test_days + 5:
+        td = max(20, n // 4)
+        tst = max(10, n // 8)
+    else:
+        td, tst = train_days, test_days
+    if n < td + embargo_days + tst + 5:
+        return {"n_folds": 0, "oos_sharpe": 0.0, "oos_return": 0.0, "embargo_days": embargo_days, "folds": []}
+
+    rows = []
+    oos_parts: list[pd.Series] = []
+    i = td
+    while i + embargo_days + tst <= n:
+        train = r.iloc[i - td : i]
+        test = r.iloc[i + embargo_days : i + embargo_days + tst]
+        if len(train) < 15 or len(test) < 5:
+            i += tst
+            continue
+        mt = strategy_metrics(train)
+        me = strategy_metrics(test)
+        rows.append(
+            {
+                "train_start": str(train.index[0].date()),
+                "train_end": str(train.index[-1].date()),
+                "test_start": str(test.index[0].date()),
+                "test_end": str(test.index[-1].date()),
+                "train_sharpe": round(float(mt.get("sharpe", 0)), 3),
+                "test_sharpe": round(float(me.get("sharpe", 0)), 3),
+                "test_return": round(float(me.get("total_return", 0)), 4),
+            }
+        )
+        oos_parts.append(test)
+        i += tst
+
+    if not oos_parts:
+        return {"n_folds": 0, "oos_sharpe": 0.0, "oos_return": 0.0, "embargo_days": embargo_days, "folds": []}
+
+    oos = pd.concat(oos_parts).sort_index()
+    oos = oos[~oos.index.duplicated(keep="last")]
+    m = strategy_metrics(oos)
+    return {
+        "n_folds": len(rows),
+        "train_days": td,
+        "test_days": tst,
+        "embargo_days": embargo_days,
+        "oos_sharpe": round(float(m.get("sharpe", 0)), 3),
+        "oos_return": round(float(m.get("total_return", 0)), 4),
+        "method": "purged walk-forward w/ embargo (Lopez de Prado AFML ch.7)",
+        "folds": rows[-MAX_WF_FOLDS:],
+    }
+
+
 def _avg_abs_corr_vs(ref_returns: pd.Series, target: pd.Series) -> float:
     df = pd.DataFrame({"ref": ref_returns, "tgt": target}).dropna()
     if len(df) < 20:
@@ -138,6 +204,7 @@ def audit_single(
     tc = _tc_drag_metrics(r, int(m.get("n_trades", 0)))
     rolling = _rolling_series(r)
     wf = _adaptive_walk_forward(r)
+    wf_purged = purged_walk_forward_returns(r)
 
     avg_corr_whale = 0.0
     avg_corr_pairs = 0.0
@@ -166,6 +233,7 @@ def audit_single(
         },
         "rolling_60d": rolling,
         "walk_forward": wf,
+        "walk_forward_purged": wf_purged,
         "avg_abs_corr_whale": avg_corr_whale,
         "avg_abs_corr_pairs": avg_corr_pairs,
     }
@@ -192,6 +260,7 @@ def build_strategy_audit(returns_map: dict[str, pd.Series]) -> dict:
     for sid, entry in entries.items():
         m = entry["metrics"]
         wf = entry.get("walk_forward") or {}
+        wfp = entry.get("walk_forward_purged") or {}
         summary_rows.append(
             {
                 "id": sid,
@@ -200,6 +269,7 @@ def build_strategy_audit(returns_map: dict[str, pd.Series]) -> dict:
                 "max_dd": m["max_dd"],
                 "n_trades": m["n_trades"],
                 "oos_sharpe": wf.get("oos_sharpe", 0.0),
+                "oos_sharpe_purged": wfp.get("oos_sharpe", 0.0),
                 "avg_abs_corr_pairs": entry.get("avg_abs_corr_pairs", 0.0),
             }
         )

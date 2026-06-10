@@ -20,6 +20,7 @@ from tradingagents.quant.alpha_sleeves import (
     vol_risk_parity_meme_returns,
 )
 from tradingagents.quant.pairs_stat_arb import pairs_spread_returns_v2
+from tradingagents.quant.rl_sleeve import load_rl_sleeve_returns
 from tradingagents.quant.polymarket_strategy import StrategyConfig, load_universe_prices
 from tradingagents.quant.whale_strategy import (
     WhaleStrategyConfig,
@@ -197,6 +198,17 @@ def collect_strategy_returns(
             out["poly_mean_reversion"] = poly_mean_reversion_returns(poly)
         except Exception as exc:
             errors["poly_mean_reversion"] = str(exc)
+
+    # Offline-trained RL research sleeve (TensorTrade track) — research tab only,
+    # never joins the Equal Index or PROD book (not in BASE_SLEEVE_IDS).
+    rl = load_rl_sleeve_returns(start, end)
+    if len(rl):
+        out["rl_tensortrade"] = rl
+    else:
+        errors.setdefault(
+            "rl_tensortrade",
+            "RL sleeve not trained yet — run integrations/rl_tensortrade/train_rl_sleeve.py (py3.12 env)",
+        )
 
     return _clean_returns(out), errors
 
