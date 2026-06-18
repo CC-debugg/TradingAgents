@@ -80,6 +80,42 @@ def pairs_spread_returns_v2(
     return (spread_ret - tc).dropna()
 
 
+def pairs_spread_signal_v2(
+    price_a: pd.Series,
+    price_b: pd.Series,
+    lookback: int = 20,
+    entry_z: float = 2.0,
+    exit_z: float = 0.75,
+) -> tuple[pd.Series, pd.Series]:
+    """Daily spread position (+1 long A/short B) and z-score series."""
+    a = price_a.dropna().sort_index()
+    b = price_b.reindex(a.index).ffill().dropna()
+    common = a.index.intersection(b.index)
+    if len(common) < lookback + 5:
+        return pd.Series(dtype=float), pd.Series(dtype=float)
+    a, b = a.loc[common], b.loc[common]
+    spread = np.log(a / b)
+    mu = spread.rolling(lookback).mean()
+    sd = spread.rolling(lookback).std().replace(0, np.nan)
+    z = (spread - mu) / sd
+    sig = pd.Series(0.0, index=common)
+    pos = 0.0
+    for dt in common:
+        zi = z.loc[dt]
+        if np.isnan(zi):
+            sig.loc[dt] = pos
+            continue
+        if pos == 0.0:
+            if zi < -entry_z:
+                pos = 1.0
+            elif zi > entry_z:
+                pos = -1.0
+        elif abs(zi) < exit_z:
+            pos = 0.0
+        sig.loc[dt] = pos
+    return sig, z
+
+
 def latest_pairs_signal(
     price_a: pd.Series,
     price_b: pd.Series,

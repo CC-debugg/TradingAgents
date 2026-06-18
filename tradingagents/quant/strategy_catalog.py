@@ -119,4 +119,4 @@ STRATEGY_CATALOG: list[StrategySpec] = [
     ),
 ]
 
-DASHBOARD_VERSION = "2.8-rl-purged-audit"
+DASHBOARD_VERSION = "2.9-trade-history"

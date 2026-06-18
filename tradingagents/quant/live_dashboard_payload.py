@@ -28,6 +28,7 @@ from tradingagents.quant.hf_manager import (
     hf_manager_returns,
 )
 from tradingagents.quant.live_execution import build_live_execution_snapshot
+from tradingagents.quant.live_trade_history import build_trade_history_payload
 from tradingagents.quant.live_portfolio_sim import portfolio_pnl_snapshot, sim_capital, sim_start_date
 from tradingagents.quant.live_strategies import collect_strategy_returns, fetch_live_data_bundle
 from tradingagents.quant.regime_allocator import blend_returns, regime_dynamic_weights
@@ -321,6 +322,7 @@ def build_live_payload(
         trades=bundle.get("trades"),
     )
     assets_live = _build_assets_live(bundle, exec_snap, slug)
+    trade_history = build_trade_history_payload(bundle, exec_snap, as_of, persist=True)
     sig = exec_snap["signals"]
     intents = exec_snap["clob_intents"]
     news_gate = exec_snap["news_gate"]
@@ -503,6 +505,7 @@ def build_live_payload(
         "gate_reason": exec_snap["gate_reason"],
         "production_strategies": exec_snap["production_strategies"],
         "clob_intents": [asdict(i) for i in intents],
+        "trade_history": trade_history,
         "clob_health": clob_health_check(),
         "news": {
             "fred_api_configured": bool(news.get("fred_api_configured")),

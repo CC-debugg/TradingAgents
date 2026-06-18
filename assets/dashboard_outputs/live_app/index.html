@@ -817,6 +817,72 @@
       return "";
     }
 
+    function renderTradeHistoryPanel() {
+      const th = payload.trade_history || {};
+      const current = th.current_orders || [];
+      const positions = th.position_summary || [];
+      const liveLog = th.live_log_tail || [];
+      const backtest = th.backtest_trades || [];
+      const mode = th.mode || "dry_run";
+      const modeColor = mode === "live" ? "#00ff88" : "#ffaa44";
+
+      const posRows = positions.map(function (p) {
+        return "<tr><td>" + p.asset + "</td><td><b>" + p.position + "</b></td><td>" +
+          fmtNum(p.signal, 2) + "</td></tr>";
+      }).join("");
+
+      const curRows = current.length
+        ? current.map(function (o) {
+            return "<tr><td>" + o.strategy + "</td><td>" + o.asset + "</td><td><b>" +
+              (o.action || o.side + " " + o.outcome) + "</b></td><td>" +
+              (o.side || "—") + "</td><td>$" + (o.size_usd != null ? o.size_usd : "—") +
+              "</td><td>" + (o.limit_price != null ? o.limit_price : "—") +
+              "</td><td>" + (o.status || "—") + "</td><td class='desc'>" +
+              (o.message || "") + "</td></tr>";
+          }).join("")
+        : "<tr><td colspan='8' class='desc'>Flat — no order above signal threshold (|signal| &gt; 0.25)</td></tr>";
+
+      const logRows = liveLog.slice().reverse().map(function (r) {
+        return "<tr><td>" + (r.recorded_at_ny || "—") + "</td><td>" +
+          (r.strategy || "—") + "</td><td>" + (r.asset || "—") + "</td><td><b>" +
+          (r.side || "") + " " + (r.outcome || "") + "</b></td><td>$" +
+          (r.size_usd || "—") + "</td><td>" + (r.status || "—") +
+          "</td><td>" + (r.mode || "—") + "</td><td class='desc'>" +
+          (r.message || r.reason || "") + "</td></tr>";
+      }).join("");
+
+      const btRows = backtest.slice().reverse().slice(0, 60).map(function (r) {
+        return "<tr><td>" + r.date + "</td><td>" + r.strategy + "</td><td>" +
+          r.asset + "</td><td><b>" + r.action + "</b></td><td>" + r.side +
+          "</td><td>" + (r.outcome || "—") + "</td><td>" +
+          (r.price != null ? r.price : "—") + "</td><td>" +
+          (r.z_score != null ? r.z_score : "—") + "</td></tr>";
+      }).join("");
+
+      return (
+        '<div class="card" style="border-color:var(--accent)"><h2>Trade history · PROD book (whale + pairs)</h2>' +
+        '<p class="desc">Mode <code style="color:' + modeColor + '">' + mode.toUpperCase() +
+        "</code> · saved rows <b>" + (th.n_saved || 0) + "</b> · log: <code>" +
+        (th.log_path || "data/live/trade_history.csv") + "</code></p>" +
+        (th.note ? '<p class="desc">' + th.note + "</p>" : "") +
+        '<h3>What we are buying / selling now</h3>' +
+        '<table class="audit-table"><thead><tr><th>Asset</th><th>Position</th><th>Signal</th></tr></thead><tbody>' +
+        (posRows || "<tr><td colspan='3'>—</td></tr>") + "</tbody></table>" +
+        '<h3>Current order intents (this refresh)</h3>' +
+        '<table class="audit-table"><thead><tr><th>Strategy</th><th>Asset</th><th>Action</th><th>Side</th><th>Size $</th><th>Limit</th><th>Status</th><th>Note</th></tr></thead><tbody>' +
+        curRows + "</tbody></table>" +
+        '<h3>Saved live order log (each refresh)</h3>' +
+        '<table class="audit-table"><thead><tr><th>Time (NY)</th><th>Strategy</th><th>Asset</th><th>Order</th><th>Size $</th><th>Status</th><th>Mode</th><th>Note</th></tr></thead><tbody>' +
+        (logRows || "<tr><td colspan='8'>No saved rows yet — click Refresh</td></tr>") +
+        "</tbody></table>" +
+        '<h3>Backtest trade history (signal changes, last 60)</h3>' +
+        '<p class="desc">Historical OPEN/CLOSE/FLIP from whale + pairs rules over lookback window (includes 5+5 bps TC in returns).</p>' +
+        '<table class="audit-table"><thead><tr><th>Date</th><th>Strategy</th><th>Asset</th><th>Action</th><th>Side</th><th>Leg</th><th>Price</th><th>z</th></tr></thead><tbody>' +
+        (btRows || "<tr><td colspan='8'>No trades in window</td></tr>") +
+        "</tbody></table></div>"
+      );
+    }
+
     function renderRegimePanel() {
       const r = payload.macro_regime || {};
       const meta = r.meta || {};
@@ -898,9 +964,11 @@
           : "";
       const compositeAddons =
         id === "live_composite"
-          ? renderPnLBanner() + renderRegimePanel() + renderAllocationTable() +
+          ? renderTradeHistoryPanel() + renderPnLBanner() + renderRegimePanel() + renderAllocationTable() +
             renderAuditTable() + renderCorrHeatmap() + renderAlphaSleevesTable()
           : "";
+      const prodTradeHistory =
+        PROD_IDS.includes(id) && id !== "live_composite" ? renderTradeHistoryPanel() : "";
       const bookExtras = renderBookTabExtras(id);
 
       $("panel").innerHTML =
@@ -958,6 +1026,7 @@
         factorBars(s.factors) +
         "</div></div>" +
         bookExtras +
+        prodTradeHistory +
         compositeAddons +
         alphaWf +
         (PROD_IDS.includes(id)

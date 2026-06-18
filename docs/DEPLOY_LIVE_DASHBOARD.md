@@ -85,4 +85,4 @@ curl -s https://YOUR-URL/health
 curl -s https://YOUR-URL/api/version
 ```
 
-Expect `dashboard_version: 2.1-production` and 3 strategy ids.
+Expect `dashboard_version: 2.4-dual-regime` and **8** strategy ids (3 PROD + 5 α sleeves).
