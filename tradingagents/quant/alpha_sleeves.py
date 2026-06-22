@@ -144,3 +144,31 @@ def vol_risk_parity_meme_returns(
     PDF: Smart Beta - Blackrock Guide by Andrew Ang.pdf
     """
     return ts_momentum_meme_returns(doge, wif, lookback=lookback, fee_bps=fee_bps)
+
+
+def binance_poly_latency_returns(
+    binance: pd.Series,
+    poly: pd.Series,
+    lag: int = 1,
+    move_thresh: float = 0.025,
+    fee_bps: float = FEE_BPS_PER_LEG,
+) -> pd.Series:
+    """
+    Cross-venue lead–lag: Binance DOGE leads Polymarket Yes prob (information latency).
+    Distinct from cs_momentum_rank (DOGE→WIF same-venue microstructure).
+    When Binance moves sharply and POLY is still stale, bet POLY catches up.
+    """
+    b = binance.dropna().sort_index()
+    p = poly.reindex(b.index).ffill().dropna()
+    common = b.index.intersection(p.index)
+    if len(common) < 30:
+        return pd.Series(dtype=float)
+    b, p = b.loc[common], p.loc[common]
+    rb, rp = b.pct_change(), p.pct_change()
+    half = move_thresh / 2.0
+    sig = pd.Series(0.0, index=common)
+    sig[(rb.shift(lag) > move_thresh) & (rp < half)] = 1.0
+    sig[(rb.shift(lag) < -move_thresh) & (rp > -half)] = -1.0
+    tc = (sig.diff().abs() > 0) * (fee_bps / 10_000)
+    return (sig.shift(1) * rp - tc).dropna()
+

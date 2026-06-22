@@ -19,7 +19,19 @@
 3. Trade **Live composite** gated signals only (poly long-short / latency removed).
 4. **News gate** score ≤ −0.35 → do not open new risk.
 5. CLOB live (start small): `POLYMARKET_LIVE=1` + `POLYMARKET_PRIVATE_KEY`.
-6. DOGE/WIF: signals shown; CEX execution not wired — **POLY only** on CLOB today.
+6. **Kraken CEX** (DOGE/WIF): set `KRAKEN_API_KEY` + `KRAKEN_API_SECRET` in `.env`. Default **dry-run**; live with `KRAKEN_LIVE=1`. Shorts need `KRAKEN_USE_MARGIN=1`.
+7. Health check: `python scripts/kraken_health_check.py` (add `--live --validate-only` to test auth without submitting).
+8. **All 7 sleeves** show per-sleeve intents on dashboard; set `LIVE_ALPHA_SLEEVES=1` to execute α sleeves on refresh (default: PROD whale+pairs only).
+
+```bash
+# .env (never commit)
+KRAKEN_API_KEY=...
+KRAKEN_API_SECRET=...
+KRAKEN_LIVE=0
+KRAKEN_MAX_ORDER_USD=50
+KRAKEN_MAX_DAILY_NOTIONAL_USD=200
+python scripts/kraken_health_check.py
+```
 
 ## Interactive LIVE UI (click strategy tabs, refresh on open)
 
@@ -68,7 +80,7 @@ pip install py-clob-client   # required for live submission (order builder WIP)
 python scripts/polymarket_meme_run.py live-daily --live
 ```
 
-Meme legs (DOGE/WIF) require a **CEX API** (not implemented on Polymarket CLOB).
+Meme legs (DOGE/WIF) execute on **Kraken REST** when `KRAKEN_LIVE=1` (see `tradingagents/execution/kraken_spot.py`). Risk caps: `KRAKEN_MAX_ORDER_USD`, `KRAKEN_MAX_DAILY_NOTIONAL_USD`.
 
 ## Cron (macOS example, 16:00 ET weekdays)
 

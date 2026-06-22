@@ -6,6 +6,7 @@ import os
 
 import pandas as pd
 
+from tradingagents.dataflows.binance_spot import fetch_binance_daily_close
 from tradingagents.dataflows.polymarket_gamma import fetch_polymarket_daily_ohlcv
 from tradingagents.dataflows.polymarket_whale import (
     DEFAULT_CONDITION_IDS,
@@ -13,6 +14,7 @@ from tradingagents.dataflows.polymarket_whale import (
     fetch_market_meta,
 )
 from tradingagents.quant.alpha_sleeves import (
+    binance_poly_latency_returns,
     cross_sectional_momentum_returns,
     poly_mean_reversion_returns,
     short_term_reversal_returns,
@@ -106,6 +108,7 @@ def fetch_live_data_bundle(
         errors["trades"] = str(exc)
 
     poly = pd.Series(dtype=float)
+    binance_doge = pd.Series(dtype=float)
     try:
         ohlcv = fetch_polymarket_daily_ohlcv(slug, start, end)
         poly = ohlcv["Close"].dropna() if not ohlcv.empty else pd.Series(dtype=float)
@@ -121,6 +124,20 @@ def fetch_live_data_bundle(
     if len(poly):
         poly.index = pd.to_datetime(poly.index).tz_localize(None).normalize()
 
+    try:
+        binance_doge = fetch_binance_daily_close("DOGEUSDT", start, end)
+        if len(binance_doge):
+            binance_doge.index = pd.to_datetime(binance_doge.index).tz_localize(None).normalize()
+    except Exception as exc:
+        errors["binance_doge"] = str(exc)
+
+    if len(binance_doge) == 0 and prices.get("DOGE") is not None:
+        binance_doge = prices["DOGE"].copy()
+        errors.setdefault(
+            "binance_doge",
+            "Binance API unavailable — using DOGE spot proxy for latency sleeve",
+        )
+
     flow = pd.DataFrame()
     if len(trades) and len(poly):
         try:
@@ -132,6 +149,7 @@ def fetch_live_data_bundle(
         "prices": prices,
         "trades": trades,
         "poly": poly,
+        "binance_doge": binance_doge,
         "flow": flow,
         "errors": errors,
         "slug": slug,
@@ -192,6 +210,15 @@ def collect_strategy_returns(
             errors["short_term_reversal"] = str(exc)
     else:
         errors.setdefault("pairs_stat_arb", "missing DOGE or WIF prices")
+
+    binance = bundle.get("binance_doge", pd.Series(dtype=float))
+    if len(poly) and len(binance):
+        try:
+            out["binance_poly_latency"] = binance_poly_latency_returns(binance, poly)
+        except Exception as exc:
+            errors["binance_poly_latency"] = str(exc)
+    elif len(poly):
+        errors.setdefault("binance_poly_latency", "missing Binance DOGEUSDT prices")
 
     if len(poly):
         try:

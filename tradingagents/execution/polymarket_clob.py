@@ -30,15 +30,8 @@ def live_trading_enabled() -> bool:
     return os.environ.get("POLYMARKET_LIVE", "").strip().lower() in ("1", "true", "yes")
 
 
-def target_positions_from_signals(
-    poly_signal: float,
-    doge_signal: float,
-    wif_signal: float,
-    notional_usd: float = 100.0,
-) -> list[OrderIntent]:
-    """Map [-1,1] signals to POLY Yes/No intents (meme legs logged only until CEX wired)."""
-    intents: list[OrderIntent] = []
-    meta = resolve_market_slug("gta-vi-released-before-june-2026") or {}
+def _resolve_poly_prices(slug: str) -> tuple[float, float]:
+    meta = resolve_market_slug(slug) or {}
     yes_p, no_p = 0.5, 0.5
     raw = meta.get("outcomePrices")
     if isinstance(raw, str):
@@ -47,31 +40,48 @@ def target_positions_from_signals(
             yes_p, no_p = float(op[0]), float(op[1])
         except (json.JSONDecodeError, IndexError, TypeError):
             pass
+    return yes_p, no_p
 
-    if poly_signal > 0.25:
-        intents.append(
-            OrderIntent(
-                "gta-vi-released-before-june-2026",
-                "Yes",
-                "BUY",
-                notional_usd * min(1.0, abs(poly_signal)),
-                yes_p,
-                "poly_signal_long",
-            )
-        )
-    elif poly_signal < -0.25:
-        intents.append(
-            OrderIntent(
-                "gta-vi-released-before-june-2026",
-                "No",
-                "BUY",
-                notional_usd * min(1.0, abs(poly_signal)),
-                no_p,
-                "poly_signal_short_via_no",
-            )
-        )
 
-    # Crypto: placeholder intents (require exchange API — not Polymarket CLOB)
+def poly_intent_from_signal(
+    poly_signal: float,
+    notional_usd: float,
+    slug: str,
+    reason: str,
+    *,
+    thresh: float = 0.25,
+) -> list[OrderIntent]:
+    """Map poly signal in [-1,1] to Yes/No buy intents."""
+    intents: list[OrderIntent] = []
+    if abs(poly_signal) <= thresh:
+        return intents
+    yes_p, no_p = _resolve_poly_prices(slug)
+    size = notional_usd * min(1.0, abs(poly_signal))
+    if poly_signal > thresh:
+        intents.append(OrderIntent(slug, "Yes", "BUY", size, yes_p, reason))
+    elif poly_signal < -thresh:
+        intents.append(OrderIntent(slug, "No", "BUY", size, no_p, reason))
+    return intents
+
+
+def target_positions_from_signals(
+    poly_signal: float,
+    doge_signal: float,
+    wif_signal: float,
+    notional_usd: float | None = None,
+) -> list[OrderIntent]:
+    """Map [-1,1] signals to POLY Yes/No + Kraken DOGE/WIF intents."""
+    if notional_usd is None:
+        raw = os.environ.get("LIVE_NOTIONAL_USD", "100").strip()
+        try:
+            notional_usd = float(raw)
+        except ValueError:
+            notional_usd = 100.0
+    intents: list[OrderIntent] = []
+    slug = "gta-vi-released-before-june-2026"
+    intents.extend(poly_intent_from_signal(poly_signal, notional_usd, slug, "poly_signal"))
+
+    # Crypto legs → Kraken
     if abs(doge_signal) > 0.25:
         intents.append(
             OrderIntent("DOGE-USD", "spot", "BUY" if doge_signal > 0 else "SELL", notional_usd * 0.3, 0, "doge_signal")
@@ -83,45 +93,74 @@ def target_positions_from_signals(
     return intents
 
 
+def _is_kraken_intent(intent: OrderIntent) -> bool:
+    return intent.market_slug in ("DOGE-USD", "WIF-USD")
+
+
 def execute_intents(intents: list[OrderIntent], dry_run: bool | None = None) -> list[dict]:
     """
-    Live: requires py-clob-client + POLYMARKET_PRIVATE_KEY (optional dep).
-    Default dry_run=True unless POLYMARKET_LIVE=1.
+    Live: Polymarket CLOB (py-clob-client) + Kraken CEX (REST).
+    Default dry_run per venue unless POLYMARKET_LIVE=1 / KRAKEN_LIVE=1.
     """
-    if dry_run is None:
-        dry_run = not live_trading_enabled()
+    from tradingagents.execution.kraken_spot import execute_kraken_intent, live_trading_enabled as kraken_live
+
     results = []
     for intent in intents:
+        if _is_kraken_intent(intent):
+            kr = execute_kraken_intent(
+                intent,
+                dry_run=dry_run if dry_run is not None else not kraken_live(),
+            )
+            results.append(
+                {
+                    "venue": kr.get("venue", "kraken"),
+                    "market": intent.market_slug,
+                    "outcome": intent.outcome,
+                    "side": intent.side,
+                    "size_usd": intent.size_usd,
+                    "limit_price": intent.limit_price,
+                    "reason": intent.reason,
+                    "status": kr.get("status", "error"),
+                    "message": kr.get("message", ""),
+                    "pair": kr.get("pair"),
+                    "txids": kr.get("txids"),
+                }
+            )
+            continue
+
+        poly_dry = dry_run if dry_run is not None else not live_trading_enabled()
         row = {
+            "venue": "polymarket",
             "market": intent.market_slug,
             "outcome": intent.outcome,
             "side": intent.side,
             "size_usd": intent.size_usd,
             "limit_price": intent.limit_price,
             "reason": intent.reason,
-            "status": "dry_run" if dry_run else "pending",
+            "status": "dry_run" if poly_dry else "pending",
             "message": "",
         }
-        if dry_run:
+        if poly_dry:
             row["message"] = "DRY_RUN — no order sent (set POLYMARKET_LIVE=1 to enable)"
             results.append(row)
             continue
-        if intent.market_slug in ("DOGE-USD", "WIF-USD"):
-            row["status"] = "skipped"
-            row["message"] = "CEX spot execution not wired — POLY only on CLOB"
-            results.append(row)
-            continue
         try:
-            from py_clob_client.client import ClobClient  # type: ignore
+            from tradingagents.execution.polymarket_clob_live import submit_polymarket_intent
 
-            pk = os.environ["POLYMARKET_PRIVATE_KEY"]
-            client = ClobClient(CLOB_HOST, key=pk, chain_id=int(os.environ.get("POLYMARKET_CHAIN_ID", "137")))
-            # Production: build signed order from token_id + price + size
-            row["status"] = "submitted_stub"
-            row["message"] = "ClobClient initialized — wire create_order in next iteration"
+            result = submit_polymarket_intent(
+                intent.market_slug,
+                intent.outcome,
+                intent.side,
+                intent.size_usd,
+                intent.limit_price,
+            )
+            row["status"] = result.get("status", "submitted")
+            row["message"] = result.get("message", "")
+            row["order_id"] = result.get("order_id")
+            row["size_shares"] = result.get("size_shares")
         except ImportError:
             row["status"] = "error"
-            row["message"] = "pip install py-clob-client for live CLOB"
+            row["message"] = "pip install py-clob-client or py-clob-client-v2 for live CLOB"
         except KeyError:
             row["status"] = "error"
             row["message"] = "POLYMARKET_PRIVATE_KEY not set"

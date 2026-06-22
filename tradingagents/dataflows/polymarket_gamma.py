@@ -41,20 +41,41 @@ def resolve_market_slug(slug: str) -> dict | None:
     return None
 
 
-def _yes_token_id(market: dict) -> str | None:
+def _parse_clob_token_ids(market: dict) -> list[str]:
     raw = market.get("clobTokenIds")
     if not raw:
-        return None
+        return []
     if isinstance(raw, str):
         try:
             ids = json.loads(raw)
         except json.JSONDecodeError:
-            return None
+            return []
     else:
         ids = raw
-    if isinstance(ids, list) and ids:
-        return str(ids[0])
-    return None
+    return [str(x) for x in ids] if isinstance(ids, list) else []
+
+
+def clob_outcome_token_ids(market: dict) -> tuple[str | None, str | None]:
+    """Return (yes_token_id, no_token_id) from Gamma market metadata."""
+    ids = _parse_clob_token_ids(market)
+    if not ids:
+        return None, None
+    yes_id = ids[0]
+    no_id = ids[1] if len(ids) > 1 else None
+    return yes_id, no_id
+
+
+def market_order_options(market: dict) -> dict[str, str | bool]:
+    tick = market.get("orderPriceMinTickSize") or market.get("minimum_tick_size") or "0.01"
+    return {
+        "tick_size": str(tick),
+        "neg_risk": bool(market.get("negRisk") or market.get("neg_risk") or False),
+    }
+
+
+def _yes_token_id(market: dict) -> str | None:
+    yes_id, _ = clob_outcome_token_ids(market)
+    return yes_id
 
 
 def fetch_polymarket_daily_ohlcv(

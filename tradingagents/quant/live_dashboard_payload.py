@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from tradingagents.dataflows.macro_news import fetch_macro_news_snapshot
+from tradingagents.execution.kraken_spot import kraken_health_check
 from tradingagents.execution.polymarket_clob import clob_health_check
 from tradingagents.quant.barra_risk_factors import (
     BARRA_FACTOR_META,
@@ -22,11 +23,7 @@ from tradingagents.quant.all_weather_regime import (
     build_regime_snapshot,
     transaction_costs_json,
 )
-from tradingagents.quant.hf_manager import (
-    equal_weight_allocation,
-    equal_weight_returns,
-    hf_manager_returns,
-)
+from tradingagents.quant.hf_manager import BASE_SLEEVE_IDS, equal_weight_allocation, equal_weight_returns, hf_manager_returns
 from tradingagents.quant.live_execution import build_live_execution_snapshot
 from tradingagents.quant.live_trade_history import build_trade_history_payload
 from tradingagents.quant.live_portfolio_sim import portfolio_pnl_snapshot, sim_capital, sim_start_date
@@ -312,6 +309,8 @@ def build_live_payload(
     regime_snap = {**build_regime_snapshot(barra), **build_dual_regime_snapshot(barra)}
     strategy_audit = build_strategy_audit(returns_map)
     equal_weights = equal_weight_allocation(returns_map)
+    n_base = len(BASE_SLEEVE_IDS)
+    eq_frac = round(1.0 / n_base, 4) if n_base else 0.0
 
     exec_snap = build_live_execution_snapshot(
         bundle["flow"],
@@ -320,6 +319,7 @@ def build_live_payload(
         bundle["prices"].get("WIF"),
         notional_usd=100.0,
         trades=bundle.get("trades"),
+        binance=bundle.get("binance_doge"),
     )
     assets_live = _build_assets_live(bundle, exec_snap, slug)
     trade_history = build_trade_history_payload(bundle, exec_snap, as_of, persist=True)
@@ -409,6 +409,9 @@ def build_live_payload(
             "equal": equal_weights,
             "hf_manager": hf_weights,
             "prod": prod_weights,
+            "n_base_sleeves": n_base,
+            "equal_weight_fraction": eq_frac,
+            "equal_weight_label": f"1/{n_base}",
         },
         "strategy_audit": strategy_audit,
         "strategy_correlation": strategy_audit.get("correlation") or _correlation_json(
@@ -421,7 +424,7 @@ def build_live_payload(
             "capital_usd": sim_capital(),
             "note": (
                 "Paper book PnL from sim start using Equal-Weight Multi-Strategy Index "
-                f"({ROUND_TRIP_BPS:.0f} bps RT TC included in sleeve returns)."
+                f"(1/{n_base} per sleeve, {ROUND_TRIP_BPS:.0f} bps RT TC included)."
             ),
         },
         "research_refs": [
@@ -505,8 +508,14 @@ def build_live_payload(
         "gate_reason": exec_snap["gate_reason"],
         "production_strategies": exec_snap["production_strategies"],
         "clob_intents": [asdict(i) for i in intents],
+        "sleeve_intents": exec_snap.get("sleeve_intents") or {},
+        "sleeve_signals": exec_snap.get("sleeve_signals") or {},
+        "notional_per_sleeve_usd": exec_snap.get("notional_per_sleeve_usd"),
+        "alpha_sleeves_live": exec_snap.get("alpha_sleeves_live", False),
+        "all_intents": [asdict(i) for i in (exec_snap.get("all_intents") or intents)],
         "trade_history": trade_history,
         "clob_health": clob_health_check(),
+        "kraken_health": kraken_health_check(),
         "news": {
             "fred_api_configured": bool(news.get("fred_api_configured")),
             "ecb": ecb,

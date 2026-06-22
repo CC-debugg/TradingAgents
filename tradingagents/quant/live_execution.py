@@ -5,7 +5,8 @@ from __future__ import annotations
 import pandas as pd
 
 from tradingagents.dataflows.macro_news import fetch_macro_news_snapshot
-from tradingagents.execution.polymarket_clob import OrderIntent, target_positions_from_signals
+from tradingagents.execution.polymarket_clob import target_positions_from_signals
+from tradingagents.execution.sleeve_intents import alpha_sleeves_live_enabled, build_sleeve_intent_map, merge_execution_intents
 from tradingagents.quant.news_gate import apply_news_gate, score_macro_news
 from tradingagents.quant.pairs_stat_arb import pairs_execution_detail, pairs_spread_returns_v2
 from tradingagents.quant.whale_strategy import (
@@ -41,6 +42,7 @@ def build_live_execution_snapshot(
     wif: pd.Series | None,
     notional_usd: float = 100.0,
     trades: pd.DataFrame | None = None,
+    binance: pd.Series | None = None,
 ) -> dict:
     """
     News-gated signals for CLOB + meme legs.
@@ -63,6 +65,16 @@ def build_live_execution_snapshot(
     wif_sig, wif_reason = apply_news_gate(wif_raw, gate)
 
     intents = target_positions_from_signals(poly_sig, doge_sig, wif_sig, notional_usd=notional_usd)
+    sleeve_pack = build_sleeve_intent_map(
+        flow,
+        poly,
+        doge,
+        wif,
+        binance=binance,
+        notional_usd=notional_usd,
+        trades=trades,
+    )
+    all_intents = merge_execution_intents(intents, sleeve_pack["all_alpha_intents"])
 
     return {
         "news_gate": gate,
@@ -76,6 +88,11 @@ def build_live_execution_snapshot(
             "WIF": wif_reason,
         },
         "clob_intents": intents,
+        "sleeve_intents": sleeve_pack["intents_by_sleeve"],
+        "sleeve_signals": sleeve_pack["signals"],
+        "notional_per_sleeve_usd": sleeve_pack["notional_per_sleeve_usd"],
+        "all_intents": all_intents,
+        "alpha_sleeves_live": alpha_sleeves_live_enabled(),
         "production_strategies": list(LIVE_PRODUCTION_IDS),
     }
 

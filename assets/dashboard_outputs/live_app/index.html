@@ -255,7 +255,15 @@
     const API = "/api/live";
     const PROD_IDS = ["live_composite", "whale_flow", "pairs_stat_arb"];
     const BOOK_IDS = ["multi_strategy_index", "hf_manager_book"];
-    const ALPHA_IDS = ["ts_momentum_meme", "cs_momentum_rank", "short_term_reversal", "poly_mean_reversion", "vol_risk_parity", "rl_tensortrade"];
+    const ALPHA_IDS = [
+      "ts_momentum_meme",
+      "cs_momentum_rank",
+      "binance_poly_latency",
+      "short_term_reversal",
+      "poly_mean_reversion",
+      "vol_risk_parity",
+      "rl_tensortrade",
+    ];
     const EXPECT_VERSION = "__DASHBOARD_VERSION__";
     let payload = null;
     let activeId = null;
@@ -267,9 +275,15 @@
       return s.live_production === true || PROD_IDS.includes(s.id);
     }
 
+    function equalWeightLabel() {
+      const a = payload && payload.allocation ? payload.allocation : {};
+      return a.equal_weight_label || ("1/" + (a.n_base_sleeves || 8));
+    }
+
     function visibleStrategies() {
       if (!payload || !payload.strategies) return [];
       const all = payload.strategies.filter((s) => s.runnable !== false);
+      const catalogOrder = payload.catalog_ids || [];
       return all.sort((a, b) => {
         const order = ["live_composite", "multi_strategy_index", "hf_manager_book"];
         const ai = order.indexOf(a.id);
@@ -277,6 +291,11 @@
         if (ai >= 0 && bi >= 0) return ai - bi;
         if (ai >= 0) return -1;
         if (bi >= 0) return 1;
+        const ci = catalogOrder.indexOf(a.id);
+        const cj = catalogOrder.indexOf(b.id);
+        if (ci >= 0 && cj >= 0) return ci - cj;
+        if (ci >= 0) return -1;
+        if (cj >= 0) return 1;
         const ap = PROD_IDS.includes(a.id) ? 1 : 0;
         const bp = PROD_IDS.includes(b.id) ? 1 : 0;
         return bp - ap;
@@ -656,6 +675,71 @@
         .join("");
     }
 
+    function renderVenueHealth() {
+      const kh = payload.kraken_health || {};
+      const ch = payload.clob_health || {};
+      const krakenOk = kh.rest_reachable && kh.auth_ok;
+      const clobOk = ch.clob_reachable;
+      const krakenCls = krakenOk ? "green" : kh.credentials_configured ? "" : "";
+      const clobCls = clobOk ? "green" : "red";
+      return (
+        '<span><b>Venues</b> ' +
+        '<span class="chip ' + (krakenOk ? "green" : "") + '">Kraken ' +
+        (krakenOk ? "OK" : kh.credentials_configured ? "auth?" : "dry") +
+        (kh.live_flag ? " LIVE" : "") +
+        (kh.margin_flag ? " margin" : "") +
+        "</span> " +
+        '<span class="chip ' + clobCls + '">Polymarket ' +
+        (clobOk ? "OK" : "down") +
+        (ch.live_flag ? " LIVE" : "") +
+        "</span></span>"
+      );
+    }
+
+    function renderSleeveIntentsTable() {
+      const bySleeve = payload.sleeve_intents || {};
+      const sigs = payload.sleeve_signals || {};
+      const keys = Object.keys(bySleeve);
+      if (!keys.length) return "";
+      const rows = keys.map(function (sid) {
+        const intents = bySleeve[sid] || [];
+        const sig = sigs[sid] || {};
+        const legs = intents.map(function (it) {
+          return (it.side || "") + " " + (it.market_slug || it.market || "") + " $" + (it.size_usd || 0).toFixed(0);
+        }).join(" · ") || "—";
+        return (
+          "<tr><td>" + sid + "</td><td>" + (sig.signal != null ? sig.signal : "—") +
+          "</td><td>" + legs + "</td></tr>"
+        );
+      }).join("");
+      return (
+        '<div class="card"><h2>All 8 sleeves · execution intents</h2>' +
+        '<p class="desc">Per-sleeve ~$' + (payload.notional_per_sleeve_usd || "—") +
+        " each · 8 sleeves incl. <b>binance_poly_latency</b> · PROD sends whale+pairs only · set LIVE_ALPHA_SLEEVES=1 to include α sleeves on refresh.</p>" +
+        '<table class="flow-table"><thead><tr><th>Sleeve</th><th>Signal</th><th>Intents</th></tr></thead><tbody>' +
+        rows + "</tbody></table></div>"
+      );
+    }
+
+    function renderVenueHealthCard() {
+      const kh = payload.kraken_health || {};
+      const ch = payload.clob_health || {};
+      return (
+        '<div class="card"><h2>Venue health (Kraken + Polymarket)</h2>' +
+        '<div class="stats">' +
+        "<span>Kraken REST <b>" + (kh.rest_reachable ? "up" : "down") + "</b></span>" +
+        "<span>Kraken auth <b>" + (kh.auth_ok ? "ok" : kh.credentials_configured ? "fail" : "no keys") + "</b></span>" +
+        "<span>USD bal <b>" + (kh.usd_balance != null ? "$" + Number(kh.usd_balance).toFixed(0) : "—") + "</b></span>" +
+        "<span>DOGE <b>" + (kh.doge_balance != null ? kh.doge_balance : "—") + "</b></span>" +
+        "<span>WIF <b>" + (kh.wif_balance != null ? kh.wif_balance : "—") + "</b></span>" +
+        "<span>CLOB <b>" + (ch.clob_reachable ? "up" : "down") + "</b></span>" +
+        "<span>α live <b>" + (payload.alpha_sleeves_live ? "on" : "off") + "</b></span>" +
+        "</div>" +
+        (kh.auth_error ? '<p class="desc" style="color:#ff4466">' + kh.auth_error + "</p>" : "") +
+        "</div>"
+      );
+    }
+
     function renderStickyBar() {
       const el = $("stickyBar");
       if (!payload) { el.style.display = "none"; return; }
@@ -675,7 +759,7 @@
       const pnlPct = sim.pnl_pct != null ? (sim.pnl_pct * 100).toFixed(2) : "0";
       el.style.display = "flex";
       el.innerHTML =
-        '<span><b style="color:var(--accent)">$1M Paper</b> Equal Index · ' +
+        '<span><b style="color:var(--accent)">$1M Paper</b> Equal Index (' + equalWeightLabel() + ") · " +
         (sim.official_sim_start || "2026-06-04") + " · " +
         '<span class="chip ' + pnlCls + '">$' +
         (sim.equity_usd != null ? Math.round(sim.equity_usd).toLocaleString() : "—") +
@@ -686,7 +770,8 @@
         '<span class="chip green">' + (bw.label || r.current || "—") + "</span> " +
         '<span class="chip">' + ((ab.meta || {}).label || ab.current || "AB") + "</span> " +
         '<span class="chip">' + ((jpm.meta || {}).label || jpm.current || "JPM") + "</span></span>" +
-        '<span><b>HF refresh</b> <span class="desc">' + (hfSummary || JSON.stringify(hfW)) + "</span></span>";
+        '<span><b>HF refresh</b> <span class="desc">' + (hfSummary || JSON.stringify(hfW)) + "</span></span>" +
+        renderVenueHealth();
     }
 
     function renderPnLBanner() {
@@ -697,9 +782,9 @@
       const color = pnl >= 0 ? "#00ff88" : "#ff4466";
       const eq = payload.allocation || {};
       return (
-        '<div class="card" style="border-color:' + color + '"><h2>Paper book · $1M · Equal-Weight Multi-Strategy Index</h2>' +
+        '<div class="card" style="border-color:' + color + '"><h2>Paper book · $1M · Equal-Weight Multi-Strategy Index (' + equalWeightLabel() + ')</h2>' +
         '<p class="desc">Official start ' + (sim.official_sim_start || cfg.start || "2026-06-04") +
-        " · tracks 1/n blend of 7 base sleeves (not PROD whale+pairs CLOB book).</p>" +
+        " · tracks " + equalWeightLabel() + " blend of 8 base sleeves (not PROD whale+pairs CLOB book).</p>" +
         (sim.note ? '<p class="desc" style="color:#ffaa44">' + sim.note + "</p>" : "") +
         '<div class="stats"><span>Equity <b style="color:' + color + '">$' +
         (sim.equity_usd != null ? sim.equity_usd.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—") +
@@ -728,9 +813,10 @@
           (h != null ? (h * 100).toFixed(1) + "%" : "—") + "</td><td>" +
           (p != null ? (p * 100).toFixed(1) + "%" : "—") + "</td></tr>";
       }).join("");
+      const eqLabel = equalWeightLabel();
       return (
-        '<div class="card"><h2>Allocation · Equal / HF Manager / PROD</h2>' +
-        '<table class="audit-table"><thead><tr><th>Sleeve</th><th>Equal 1/n</th><th>HF Manager</th><th>PROD CLOB</th></tr></thead><tbody>' +
+        '<div class="card"><h2>Allocation · Equal ' + eqLabel + " / HF Manager / PROD</h2>" +
+        '<table class="audit-table"><thead><tr><th>Sleeve</th><th>Equal ' + eqLabel + '</th><th>HF Manager</th><th>PROD CLOB</th></tr></thead><tbody>' +
         (rows || "<tr><td colspan='4'>No weights</td></tr>") + "</tbody></table></div>"
       );
     }
@@ -780,14 +866,14 @@
         });
       });
       grid += "</div>";
-      return '<div class="card"><h2>Correlation · 7 base sleeves</h2>' + grid + "</div>";
+      return '<div class="card"><h2>Correlation · 8 base sleeves</h2>' + grid + "</div>";
     }
 
     function renderBookTabExtras(id) {
       if (id === "multi_strategy_index") {
         return renderPnLBanner() +
-          '<div class="card"><h2>Equal-weight index</h2><p class="desc">Each of 7 base sleeves gets weight 1/n. ' +
-          "Official $1M paper book tracks this index from sim start.</p></div>";
+          '<div class="card"><h2>Equal-weight index (' + equalWeightLabel() + ')</h2><p class="desc">Each of 8 base sleeves gets weight ' +
+          equalWeightLabel() + " (12.5%). Official $1M paper book tracks this index from sim start.</p></div>";
       }
       if (id === "hf_manager_book") {
         const sim = payload.hf_manager_sim || {};
@@ -921,7 +1007,7 @@
         }).join("");
       return (
         '<div class="card"><h2>α sleeves · HF diversifiers (literature)</h2>' +
-        '<p class="desc">WorldQuant 101 Alphas · Moskowitz TS mom · Ang smart beta · Lehmann reversal. ' +
+        '<p class="desc">WorldQuant 101 · Moskowitz TS mom · Ang smart beta · Lehmann reversal · <b>Binance→POLY latency</b>. ' +
         "Click α tabs on the left for equity curve + walk-forward folds.</p>" +
         '<table class="flow-table"><thead><tr><th>Strategy</th><th>Sharpe</th><th>Cum</th><th>WF OOS</th><th>Folds</th><th>Source</th></tr></thead><tbody>' +
         (rows || "<tr><td colspan='6'>Loading…</td></tr>") + "</tbody></table></div>"
@@ -1068,7 +1154,9 @@
             (sig.WIF != null ? sig.WIF : "—") + "</code></p>" +
             "<p class='desc'>Production sleeve: " +
             (payload.production_strategies || []).join(", ") +
-            " · CLOB: " + JSON.stringify(payload.clob_health || {}) + "</p></div>" +
+            " · α sleeves live: " + (payload.alpha_sleeves_live ? "yes" : "no") + "</p></div>" +
+            renderVenueHealthCard() +
+            renderSleeveIntentsTable() +
             '<div class="card"><h2>Macro news (ECB RSS' +
             (news.fred_api_configured ? " + FRED" : "") +
             ")</h2><ul class='news'>" +

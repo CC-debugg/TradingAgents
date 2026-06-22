@@ -343,7 +343,7 @@ def build_trade_history_payload(
     *,
     persist: bool = True,
 ) -> dict:
-    intents = exec_snap.get("clob_intents") or []
+    intents = exec_snap.get("all_intents") or exec_snap.get("clob_intents") or []
     results = execute_intents(intents)
     backtest = build_prod_backtest_trades(
         bundle.get("flow", pd.DataFrame()),

@@ -1,1 +1,1 @@
-"""Execution adapters (Polymarket CLOB, etc.)."""
+"""Execution adapters (Polymarket CLOB, Kraken CEX)."""
