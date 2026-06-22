@@ -11,7 +11,6 @@ import pandas as pd
 from tradingagents.execution.polymarket_clob import OrderIntent, poly_intent_from_signal
 from tradingagents.quant.alpha_sleeve_signals import (
     latest_beta_neutral_signal,
-    latest_binance_poly_latency_signal,
     latest_cs_momentum_signal,
     latest_poly_mean_reversion_signal,
     latest_short_term_reversal_signal,
@@ -105,7 +104,6 @@ def build_sleeve_intent_map(
     doge: pd.Series | None,
     wif: pd.Series | None,
     *,
-    binance: pd.Series | None = None,
     notional_usd: float | None = None,
     trades: pd.DataFrame | None = None,
     slug: str = DEFAULT_SLUG,
@@ -150,19 +148,6 @@ def build_sleeve_intent_map(
             "cs_momentum_rank",
         )
 
-        if binance is not None and len(poly):
-            lat_sig = latest_binance_poly_latency_signal(binance, poly)
-            signals["binance_poly_latency"] = lat_sig
-            out["binance_poly_latency"] = poly_intent_from_signal(
-                float(lat_sig.get("poly", 0)),
-                slice_usd,
-                slug,
-                "binance_poly_latency",
-            )
-        else:
-            signals["binance_poly_latency"] = {"signal": 0.0}
-            out["binance_poly_latency"] = []
-
         rev_sig = latest_short_term_reversal_signal(doge, wif)
         signals["short_term_reversal"] = rev_sig
         out["short_term_reversal"] = _spread_legs(
@@ -172,7 +157,7 @@ def build_sleeve_intent_map(
             "short_term_reversal",
         )
     else:
-        for sid in ("pairs_stat_arb", "binance_poly_latency", *ALPHA_SLEEVE_IDS):
+        for sid in ("pairs_stat_arb", *ALPHA_SLEEVE_IDS):
             if sid != "poly_mean_reversion":
                 signals[sid] = {"signal": 0.0}
                 out[sid] = []

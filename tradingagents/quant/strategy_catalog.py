@@ -28,9 +28,9 @@ STRATEGY_CATALOG: list[StrategySpec] = [
     ),
     StrategySpec(
         "multi_strategy_index",
-        "Multi-Strategy Index (1/8)",
+        "Multi-Strategy Index (1/7)",
         "HF · Equal-weight book",
-        "Equal 1/8 blend of all 8 base sleeves. Official $1M paper PnL tracks this index from sim start.",
+        "Equal 1/7 blend of all 7 base sleeves. Official $1M paper PnL tracks this index from sim start.",
         True,
         "hf_manager.equal_weight_returns · benchmark + paper book",
         False,
@@ -39,7 +39,7 @@ STRATEGY_CATALOG: list[StrategySpec] = [
         "hf_manager_book",
         "HF Manager (regime dynamic)",
         "HF · Regime allocator",
-        "Bridgewater + Ang & Bekaert + JPM tilt × inverse-correlation weights across 8 sleeves. Refreshed each /api/live.",
+        "Bridgewater + Ang & Bekaert + JPM tilt × inverse-correlation weights across 7 sleeves. Refreshed each /api/live.",
         True,
         "hf_manager.hf_manager_returns · regime_allocator",
         False,
@@ -81,15 +81,6 @@ STRATEGY_CATALOG: list[StrategySpec] = [
         False,
     ),
     StrategySpec(
-        "binance_poly_latency",
-        "Binance→POLY latency",
-        "Venue lead–lag",
-        "Binance DOGEUSDT leads POLY GTA Yes prob — cross-venue information latency (distinct from DOGE→WIF).",
-        True,
-        "alpha_sleeves.binance_poly_latency · polymarket_arbitrage.latency_delayed_arbitrage",
-        False,
-    ),
-    StrategySpec(
         "short_term_reversal",
         "Extreme-move reversal",
         "Alpha · Lehmann / WQ",
@@ -128,4 +119,4 @@ STRATEGY_CATALOG: list[StrategySpec] = [
     ),
 ]
 
-DASHBOARD_VERSION = "2.11-binance-poly-latency"
+DASHBOARD_VERSION = "2.12-drop-binance-latency"

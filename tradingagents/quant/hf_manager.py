@@ -13,7 +13,6 @@ BASE_SLEEVE_IDS: tuple[str, ...] = (
     "pairs_stat_arb",
     "ts_momentum_meme",
     "cs_momentum_rank",
-    "binance_poly_latency",
     "short_term_reversal",
     "poly_mean_reversion",
     "vol_risk_parity",
@@ -39,11 +38,6 @@ SLEEVE_LOGIC: dict[str, dict[str, str]] = {
         "logic_type": "lead_lag",
         "venue": "DOGE/WIF",
         "description": "DOGE leads WIF spread microstructure",
-    },
-    "binance_poly_latency": {
-        "logic_type": "venue_lead_lag",
-        "venue": "Binance→POLY",
-        "description": "Binance DOGE leads POLY GTA prob (cross-venue latency)",
     },
     "short_term_reversal": {
         "logic_type": "extreme_reversal",

@@ -42,7 +42,6 @@ def build_live_execution_snapshot(
     wif: pd.Series | None,
     notional_usd: float = 100.0,
     trades: pd.DataFrame | None = None,
-    binance: pd.Series | None = None,
 ) -> dict:
     """
     News-gated signals for CLOB + meme legs.
@@ -70,7 +69,6 @@ def build_live_execution_snapshot(
         poly,
         doge,
         wif,
-        binance=binance,
         notional_usd=notional_usd,
         trades=trades,
     )

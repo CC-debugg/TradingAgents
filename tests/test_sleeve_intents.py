@@ -25,13 +25,12 @@ class SleeveIntentTests(unittest.TestCase):
         self.assertIn("beta", sig)
         self.assertIn("wif_hedge_ratio", sig)
 
-    def test_build_sleeve_intent_map_has_eight_keys(self):
+    def test_build_sleeve_intent_map_has_seven_keys(self):
         doge, wif = self._prices()
         poly = pd.Series(0.4, index=doge.index)
-        binance = pd.Series(0.08, index=doge.index)
         flow = pd.DataFrame({"flow_net_usd": [0] * len(doge), "volume_usd": [0] * len(doge)}, index=doge.index)
-        pack = build_sleeve_intent_map(flow, poly, doge, wif, binance=binance, notional_usd=80)
-        self.assertEqual(len(pack["intents_by_sleeve"]), 8)
+        pack = build_sleeve_intent_map(flow, poly, doge, wif, notional_usd=70)
+        self.assertEqual(len(pack["intents_by_sleeve"]), 7)
         self.assertAlmostEqual(pack["notional_per_sleeve_usd"], 10.0)
 
     def test_merge_alpha_off_by_default(self):

@@ -319,7 +319,6 @@ def build_live_payload(
         bundle["prices"].get("WIF"),
         notional_usd=100.0,
         trades=bundle.get("trades"),
-        binance=bundle.get("binance_doge"),
     )
     assets_live = _build_assets_live(bundle, exec_snap, slug)
     trade_history = build_trade_history_payload(bundle, exec_snap, as_of, persist=True)
