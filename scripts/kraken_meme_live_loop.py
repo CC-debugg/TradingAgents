@@ -67,30 +67,47 @@ def _load_prices(bundle: dict) -> tuple[pd.Series, pd.Series]:
 
 
 def _load_prices_quick(days: int = 90) -> tuple[pd.Series, pd.Series]:
-    """Fast path: DOGE/WIF only via yfinance (no Polymarket whale fetch)."""
-    try:
-        import yfinance as yf
-    except ImportError as exc:
-        raise RuntimeError("yfinance not installed — run: conda install -y -c conda-forge yfinance") from exc
-
+    """Fast path: DOGE/WIF only (yfinance if available, else Kraken public OHLC)."""
     end = datetime.now(NY)
     start = end - pd.Timedelta(days=days)
     out: dict[str, pd.Series] = {}
-    for sym in ("DOGE-USD", "WIF-USD"):
-        label = sym.split("-")[0]
-        print(f"  downloading {sym} ...", flush=True)
-        df = yf.download(sym, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), progress=False)
-        if df is None or df.empty:
-            raise RuntimeError(f"yfinance returned no data for {sym}")
-        col = "Close" if "Close" in df.columns else df.columns[0]
-        s = df[col].dropna()
-        if isinstance(s, pd.DataFrame):
-            s = s.iloc[:, 0]
-        s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
-        out[label] = s
+
+    try:
+        import yfinance as yf
+
+        for sym in ("DOGE-USD", "WIF-USD"):
+            label = sym.split("-")[0]
+            print(f"  downloading {sym} (yfinance) ...", flush=True)
+            df = yf.download(sym, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), progress=False)
+            if df is None or df.empty:
+                raise RuntimeError(f"yfinance returned no data for {sym}")
+            col = "Close" if "Close" in df.columns else df.columns[0]
+            s = df[col].dropna()
+            if isinstance(s, pd.DataFrame):
+                s = s.iloc[:, 0]
+            s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+            out[label] = s
+    except Exception as exc:
+        print(f"  yfinance unavailable ({exc}); using Kraken public OHLC ...", flush=True)
+        import requests
+
+        for pair, label in (("DOGEUSD", "DOGE"), ("WIFUSD", "WIF")):
+            print(f"  downloading {pair} (Kraken) ...", flush=True)
+            r = requests.get(
+                "https://api.kraken.com/0/public/OHLC",
+                params={"pair": pair, "interval": 1440},
+                timeout=60,
+            )
+            r.raise_for_status()
+            res = r.json()["result"]
+            key = [k for k in res if k != "last"][0]
+            rows = res[key]
+            idx = pd.to_datetime([row[0] for row in rows], unit="s", utc=True).tz_convert(None).normalize()
+            out[label] = pd.Series([float(row[4]) for row in rows], index=idx).sort_index()
+
     doge, wif = out.get("DOGE"), out.get("WIF")
     if doge is None or wif is None or len(doge) < 30 or len(wif) < 30:
-        raise RuntimeError("insufficient DOGE/WIF history from yfinance")
+        raise RuntimeError("insufficient DOGE/WIF history")
     return doge, wif
 
 
