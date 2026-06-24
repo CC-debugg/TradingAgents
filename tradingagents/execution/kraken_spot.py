@@ -235,7 +235,7 @@ def place_market_order(
         "volume": str(round(size_usd, 2)),
         "oflags": "viqc",
     }
-    if use_margin and side_l == "SELL":
+    if use_margin:
         order["leverage"] = _margin_leverage()
 
     result = _private_request("AddOrder", order)

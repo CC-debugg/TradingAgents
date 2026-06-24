@@ -21,17 +21,56 @@
 5. CLOB live (start small): `POLYMARKET_LIVE=1` + `POLYMARKET_PRIVATE_KEY`.
 6. **Kraken CEX** (DOGE/WIF): set `KRAKEN_API_KEY` + `KRAKEN_API_SECRET` in `.env`. Default **dry-run**; live with `KRAKEN_LIVE=1`. Shorts need `KRAKEN_USE_MARGIN=1`.
 7. Health check: `python scripts/kraken_health_check.py` (add `--live --validate-only` to test auth without submitting).
-8. **All 7 sleeves** show per-sleeve intents on dashboard; set `LIVE_ALPHA_SLEEVES=1` to execute α sleeves on refresh (default: PROD whale+pairs only).
+8. **Kraken 5 meme sleeves live loop** — see [Kraken meme live](#kraken-meme-live-5-sleeves) below.
 
 ```bash
 # .env (never commit)
 KRAKEN_API_KEY=...
 KRAKEN_API_SECRET=...
 KRAKEN_LIVE=0
+KRAKEN_USE_MARGIN=1
+KRAKEN_MEME_LIVE=0
+KRAKEN_MEME_NOTIONAL_USD=100
 KRAKEN_MAX_ORDER_USD=50
 KRAKEN_MAX_DAILY_NOTIONAL_USD=200
 python scripts/kraken_health_check.py
 ```
+
+## Kraken meme live (5 sleeves)
+
+**Universe:** `pairs_stat_arb`, `ts_momentum_meme`, `cs_momentum_rank`, `short_term_reversal`, `vol_risk_parity` on **DOGE-USD + WIF-USD** via Kraken REST (not Polymarket).
+
+**Boss account setup (use API keys, NOT login password):**
+
+1. Log in at [kraken.com](https://www.kraken.com) → **Settings → API → Create key**
+2. Permissions: **Query + Trade** only — **never** Withdraw / Master key
+3. Enable **margin** on the account (Settings → Security / Features) if you need shorts
+4. Deposit USD (or USDC) — start small ($100–500)
+5. Copy API Key + Private Key into `.env`
+
+**Rollout (always dry-run first):**
+
+```bash
+cd /path/to/TradingAgents
+cp .env.example .env   # fill KRAKEN_* only
+
+# Step A — connectivity
+python scripts/kraken_health_check.py
+
+# Step B — signals + intents, no orders
+python scripts/kraken_meme_live_loop.py --once --dry-run
+
+# Step C — Kraken validate-only (auth path, no fill)
+KRAKEN_LIVE=1 KRAKEN_VALIDATE_ONLY=1 python scripts/kraken_meme_live_loop.py --once --validate
+
+# Step D — live loop every 5 min (keep terminal open or use cron)
+# .env: KRAKEN_LIVE=1 KRAKEN_MEME_LIVE=1 KRAKEN_USE_MARGIN=1
+python scripts/kraken_meme_live_loop.py --interval 300
+```
+
+Logs: `data/live/kraken_meme_loop.jsonl`
+
+**Risk env vars:** `KRAKEN_MAX_ORDER_USD`, `KRAKEN_MAX_DAILY_NOTIONAL_USD`, `KRAKEN_MARGIN_LEVERAGE` (default 2). News gate on by default (`KRAKEN_NEWS_GATE=1`).
 
 ## Interactive LIVE UI (click strategy tabs, refresh on open)
 

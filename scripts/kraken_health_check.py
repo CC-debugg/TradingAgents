@@ -12,6 +12,10 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from tradingagents.execution.load_env import load_repo_env  # noqa: E402
+
+load_repo_env(REPO_ROOT)
+
 from tradingagents.execution.kraken_spot import (  # noqa: E402
     credentials_configured,
     execute_kraken_intent,
