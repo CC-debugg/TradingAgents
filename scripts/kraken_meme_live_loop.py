@@ -66,7 +66,35 @@ def _load_prices(bundle: dict) -> tuple[pd.Series, pd.Series]:
     return doge, wif
 
 
-def run_once(*, dry_run: bool, validate_only: bool) -> int:
+def _load_prices_quick(days: int = 90) -> tuple[pd.Series, pd.Series]:
+    """Fast path: DOGE/WIF only via yfinance (no Polymarket whale fetch)."""
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise RuntimeError("yfinance not installed — run: conda install -y -c conda-forge yfinance") from exc
+
+    end = datetime.now(NY)
+    start = end - pd.Timedelta(days=days)
+    out: dict[str, pd.Series] = {}
+    for sym in ("DOGE-USD", "WIF-USD"):
+        label = sym.split("-")[0]
+        print(f"  downloading {sym} ...", flush=True)
+        df = yf.download(sym, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), progress=False)
+        if df is None or df.empty:
+            raise RuntimeError(f"yfinance returned no data for {sym}")
+        col = "Close" if "Close" in df.columns else df.columns[0]
+        s = df[col].dropna()
+        if isinstance(s, pd.DataFrame):
+            s = s.iloc[:, 0]
+        s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+        out[label] = s
+    doge, wif = out.get("DOGE"), out.get("WIF")
+    if doge is None or wif is None or len(doge) < 30 or len(wif) < 30:
+        raise RuntimeError("insufficient DOGE/WIF history from yfinance")
+    return doge, wif
+
+
+def run_once(*, dry_run: bool, validate_only: bool, quick: bool = False) -> int:
     if validate_only:
         os.environ["KRAKEN_VALIDATE_ONLY"] = "1"
 
@@ -89,9 +117,13 @@ def run_once(*, dry_run: bool, validate_only: bool) -> int:
 
     end = now.strftime("%Y-%m-%d")
     start = (now - pd.Timedelta(days=120)).strftime("%Y-%m-%d")
-    print(f"\nFetching prices {start} → {end} ...")
-    bundle = fetch_live_data_bundle(start, end)
-    doge, wif = _load_prices(bundle)
+    if quick:
+        print(f"\n[quick] Fetching DOGE/WIF only (~90d, no Polymarket whale) ...", flush=True)
+        doge, wif = _load_prices_quick()
+    else:
+        print(f"\nFetching full bundle {start} → {end} (can take 2–5 min) ...", flush=True)
+        bundle = fetch_live_data_bundle(start, end)
+        doge, wif = _load_prices(bundle)
 
     effective_dry = dry_run or not live_trading_enabled()
     if not effective_dry and not kraken_meme_live_enabled():
@@ -136,15 +168,20 @@ def main() -> int:
         action="store_true",
         help="Kraken validate-only path (KRAKEN_VALIDATE_ONLY=1)",
     )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Fast dry-run: yfinance DOGE/WIF only (skip Polymarket whale fetch)",
+    )
     args = parser.parse_args()
 
     if args.once or args.interval <= 0:
-        return run_once(dry_run=args.dry_run, validate_only=args.validate)
+        return run_once(dry_run=args.dry_run, validate_only=args.validate, quick=args.quick)
 
     print(f"Starting loop every {args.interval}s (Ctrl+C to stop)")
     while True:
         try:
-            code = run_once(dry_run=args.dry_run, validate_only=args.validate)
+            code = run_once(dry_run=args.dry_run, validate_only=args.validate, quick=args.quick)
             if code != 0:
                 print(f"Cycle failed ({code}), retrying in {args.interval}s")
         except KeyboardInterrupt:
