@@ -41,7 +41,6 @@ from tradingagents.execution.kraken_meme_live import (  # noqa: E402
     run_kraken_meme_cycle,
 )
 from tradingagents.execution.kraken_spot import credentials_configured, kraken_health_check, live_trading_enabled
-from tradingagents.quant.live_strategies import fetch_live_data_bundle
 
 NY = ZoneInfo("America/New_York")
 LOG_DIR = REPO_ROOT / "data" / "live"
@@ -138,6 +137,8 @@ def run_once(*, dry_run: bool, validate_only: bool, quick: bool = False) -> int:
         print(f"\n[quick] Fetching DOGE/WIF only (~90d, no Polymarket whale) ...", flush=True)
         doge, wif = _load_prices_quick()
     else:
+        from tradingagents.quant.live_strategies import fetch_live_data_bundle
+
         print(f"\nFetching full bundle {start} → {end} (can take 2–5 min) ...", flush=True)
         bundle = fetch_live_data_bundle(start, end)
         doge, wif = _load_prices(bundle)
