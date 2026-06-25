@@ -1,0 +1,6 @@
+# Minimal deps for Kraken 5-sleeve live loop (--quick mode).
+# Do NOT pip install -r requirements.txt on remote Mac (orjson/rust will fail).
+requests>=2.28
+pandas>=2.0
+numpy>=1.24
+python-dotenv>=1.0

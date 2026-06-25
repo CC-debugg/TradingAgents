@@ -33,7 +33,14 @@ if "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; the
 else
   echo "ERROR: need Python 3.10+ (tradingagents env). Got $VER from base anaconda?" >&2
   echo "Try: conda create -n tradingagents python=3.12 -y && conda activate tradingagents" >&2
+  echo "Then: python -m pip install -r requirements-kraken-live.txt" >&2
   exit 1
+fi
+
+# Ensure minimal runtime (full requirements.txt needs Rust for orjson).
+if ! python -c "import pandas, requests" 2>/dev/null; then
+  echo "Installing minimal Kraken live deps ..."
+  python -m pip install -r requirements-kraken-live.txt
 fi
 
 git pull
