@@ -208,6 +208,27 @@ def _can_spot_sell(balances: dict[str, float], asset: str, size_usd: float, pric
     return _asset_balance(balances, asset) >= need * 0.98
 
 
+def _spot_only_mode() -> bool:
+    return os.environ.get("KRAKEN_SPOT_ONLY", "").strip().lower() in ("1", "true", "yes")
+
+
+def _use_leverage_on_order(
+    side_l: str,
+    balances: dict[str, float],
+    asset: str,
+    size_usd: float,
+    price: float,
+    *,
+    use_margin: bool,
+) -> bool:
+    """Kraken: BUY with USD is spot (no leverage). SELL uses leverage only to open a short."""
+    if not use_margin or _spot_only_mode():
+        return False
+    if side_l == "BUY":
+        return False
+    return not _can_spot_sell(balances, asset, size_usd, price)
+
+
 def place_market_order(
     pair: str,
     side: str,
@@ -240,11 +261,11 @@ def place_market_order(
     balances = fetch_balances() if credentials_configured() else {}
     asset = "DOGE" if "DOGE" in pair else "WIF" if "WIF" in pair else pair[:3]
 
-    if side_l == "SELL" and not use_margin:
-        if not _can_spot_sell(balances, asset, size_usd, price):
+    if side_l == "SELL" and not _can_spot_sell(balances, asset, size_usd, price):
+        if _spot_only_mode() or not use_margin:
             return {
                 "status": "rejected",
-                "message": "spot SELL requires existing balance — enable KRAKEN_USE_MARGIN=1 for shorts",
+                "message": "spot SELL requires DOGE/WIF balance (set KRAKEN_USE_MARGIN=1 for shorts)",
                 "pair": pair,
                 "side": side_l,
                 "size_usd": size_usd,
@@ -283,8 +304,7 @@ def place_market_order(
         "ordertype": "market",
         "volume": volume_str,
     }
-    # viqc only works for spot BUY (not margin/SELL). Base volume works for all cases.
-    if use_margin:
+    if _use_leverage_on_order(side_l, balances, asset, size_usd, price, use_margin=use_margin):
         order["leverage"] = _margin_leverage()
 
     result = _private_request("AddOrder", order)

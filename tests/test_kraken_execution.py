@@ -60,7 +60,20 @@ class KrakenExecutionTests(unittest.TestCase):
         mock_priv.assert_called_once()
         order = mock_priv.call_args[0][1]
         self.assertNotIn("oflags", order)
+        self.assertNotIn("leverage", order)
         self.assertEqual(order["volume"], "50")
+
+    @patch("tradingagents.execution.kraken_spot.fetch_ticker_price", return_value=0.2)
+    @patch("tradingagents.execution.kraken_spot.fetch_balances", return_value={"ZUSD": 1000.0})
+    @patch("tradingagents.execution.kraken_spot._pair_spec")
+    @patch("tradingagents.execution.kraken_spot._private_request")
+    def test_buy_skips_leverage_when_margin_flag_on(self, mock_priv, mock_spec, _bal, _px):
+        mock_spec.return_value = {"lot_decimals": 8, "ordermin": "50", "costmin": "0.5"}
+        mock_priv.return_value = {"txid": ["OABC-123"]}
+        out = place_market_order("DOGEUSD", "BUY", 10.0, use_margin=True)
+        self.assertEqual(out["status"], "submitted")
+        order = mock_priv.call_args[0][1]
+        self.assertNotIn("leverage", order)
 
     @patch("tradingagents.execution.kraken_spot.fetch_ticker_price", return_value=0.2)
     @patch("tradingagents.execution.kraken_spot.fetch_balances", return_value={"ZUSD": 1000.0})

@@ -146,6 +146,8 @@ def net_kraken_intents(intents: list[OrderIntent]) -> list[OrderIntent]:
 def execute_kraken_meme_pack(pack: dict[str, Any], *, dry_run: bool | None = None) -> list[dict[str, Any]]:
     """Execute netted Kraken intents from build_kraken_meme_intents."""
     intents: list[OrderIntent] = pack.get("netted_intents") or []
+    # Spot buys before sells so USD-funded longs land before any sell uses inventory.
+    intents = sorted(intents, key=lambda i: (0 if i.side.upper() == "BUY" else 1, i.market_slug))
     results = []
     for intent in intents:
         results.append(execute_kraken_intent(intent, dry_run=dry_run))
