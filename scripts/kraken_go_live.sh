@@ -6,35 +6,39 @@ REPO="$(pwd)"
 echo "=== TradingAgents Kraken go-live helper ==="
 echo "Repo: $REPO"
 
-_conda_sh=""
-for _c in "$HOME/miniconda3/etc/profile.d/conda.sh" \
-           "$HOME/anaconda3/etc/profile.d/conda.sh" \
-           "/opt/anaconda3/etc/profile.d/conda.sh" \
-           "/opt/miniconda3/etc/profile.d/conda.sh"; do
-  if [[ -f "$_c" ]]; then
-    _conda_sh="$_c"
-    break
-  fi
-done
-
-if [[ -z "$_conda_sh" ]]; then
-  echo "ERROR: conda not found. Install Anaconda or create env tradingagents (Python 3.12)." >&2
-  exit 1
-fi
-# shellcheck disable=SC1090
-source "$_conda_sh"
-conda activate tradingagents
-
-PY="$(which python)"
-VER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-echo "Python: $PY ($VER)"
-if "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
-  :
+PY="$(command -v python || true)"
+if [[ -n "$PY" ]] && "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+  VER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  echo "Using active Python: $PY ($VER)"
 else
-  echo "ERROR: need Python 3.10+ (tradingagents env). Got $VER from base anaconda?" >&2
-  echo "Try: conda create -n tradingagents python=3.12 -y && conda activate tradingagents" >&2
-  echo "Then: python -m pip install -r requirements-kraken-live.txt" >&2
-  exit 1
+  _conda_sh=""
+  if command -v conda >/dev/null 2>&1; then
+    _conda_base="$(conda info --base 2>/dev/null || true)"
+    if [[ -n "$_conda_base" && -f "$_conda_base/etc/profile.d/conda.sh" ]]; then
+      _conda_sh="$_conda_base/etc/profile.d/conda.sh"
+    fi
+  fi
+  for _c in "$_conda_sh" \
+             "$HOME/miniconda3/etc/profile.d/conda.sh" \
+             "$HOME/anaconda3/etc/profile.d/conda.sh" \
+             "/opt/anaconda3/etc/profile.d/conda.sh" \
+             "/opt/miniconda3/etc/profile.d/conda.sh"; do
+    if [[ -n "$_c" && -f "$_c" ]]; then
+      # shellcheck disable=SC1090
+      source "$_c"
+      conda activate tradingagents
+      PY="$(command -v python)"
+      break
+    fi
+  done
+  if [[ -z "$PY" ]] || ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+    echo "ERROR: need Python 3.10+ in tradingagents env." >&2
+    echo "You are in: $(python --version 2>&1 || echo unknown)" >&2
+    echo "Try: conda activate tradingagents" >&2
+    exit 1
+  fi
+  VER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  echo "Python: $PY ($VER)"
 fi
 
 # Ensure minimal runtime (full requirements.txt needs Rust for orjson).
