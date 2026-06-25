@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import math
 import os
 import time
 import urllib.parse
@@ -116,6 +117,41 @@ def fetch_ticker_price(pair: str) -> float:
     return float(last)
 
 
+_PAIR_SPEC_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _pair_spec(pair: str) -> dict[str, Any]:
+    if pair not in _PAIR_SPEC_CACHE:
+        result = _public_request("AssetPairs", {"pair": pair})
+        key = next(iter(result), None)
+        if not key:
+            raise RuntimeError(f"no AssetPairs spec for {pair}")
+        _PAIR_SPEC_CACHE[pair] = result[key]
+    return _PAIR_SPEC_CACHE[pair]
+
+
+def _volume_in_base(size_usd: float, price: float, pair: str) -> tuple[str, float]:
+    """Convert USD notional to Kraken base-asset volume (required for margin/SELL)."""
+    spec = _pair_spec(pair)
+    lot_decimals = int(spec.get("lot_decimals", 8))
+    ordermin = float(spec.get("ordermin", 0) or 0)
+    costmin = float(spec.get("costmin", 0) or 0)
+
+    if size_usd < costmin:
+        raise ValueError(f"below Kraken costmin ${costmin} for {pair}")
+
+    vol = size_usd / max(price, 1e-12)
+    factor = 10**lot_decimals
+    vol = math.floor(vol * factor) / factor
+    if ordermin and vol < ordermin:
+        raise ValueError(f"below Kraken ordermin {ordermin} {pair} (~${ordermin * price:.2f})")
+    if vol <= 0:
+        raise ValueError(f"volume rounds to zero for {pair}")
+
+    s = f"{vol:.{lot_decimals}f}".rstrip("0").rstrip(".")
+    return s, vol
+
+
 def fetch_balances() -> dict[str, float]:
     if not credentials_configured():
         return {}
@@ -181,7 +217,7 @@ def place_market_order(
     validate_only: bool = False,
     reason: str = "",
 ) -> dict[str, Any]:
-    """Market order with volume in quote currency (USD) via viqc."""
+    """Market order sized in USD notional (converted to base volume for Kraken)."""
     use_margin = margin_enabled() if use_margin is None else use_margin
     side_l = side.upper()
     if side_l not in ("BUY", "SELL"):
@@ -228,13 +264,26 @@ def place_market_order(
             "reason": reason,
         }
 
+    try:
+        volume_str, volume_base = _volume_in_base(size_usd, price, pair)
+    except ValueError as exc:
+        return {
+            "status": "rejected",
+            "message": str(exc),
+            "pair": pair,
+            "side": side_l,
+            "size_usd": size_usd,
+            "price": price,
+            "reason": reason,
+        }
+
     order: dict[str, Any] = {
         "pair": pair,
         "type": side_l.lower(),
         "ordertype": "market",
-        "volume": str(round(size_usd, 2)),
-        "oflags": "viqc",
+        "volume": volume_str,
     }
+    # viqc only works for spot BUY (not margin/SELL). Base volume works for all cases.
     if use_margin:
         order["leverage"] = _margin_leverage()
 
@@ -247,6 +296,7 @@ def place_market_order(
         "pair": pair,
         "side": side_l,
         "size_usd": size_usd,
+        "volume_base": volume_base,
         "price": price,
         "txids": txids,
         "use_margin": use_margin,

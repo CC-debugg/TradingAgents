@@ -47,8 +47,10 @@ class KrakenExecutionTests(unittest.TestCase):
 
     @patch("tradingagents.execution.kraken_spot.fetch_ticker_price", return_value=0.2)
     @patch("tradingagents.execution.kraken_spot.fetch_balances", return_value={"ZUSD": 1000.0})
+    @patch("tradingagents.execution.kraken_spot._pair_spec")
     @patch("tradingagents.execution.kraken_spot._private_request")
-    def test_place_market_order_submitted(self, mock_priv, _bal, _px):
+    def test_place_market_order_submitted(self, mock_priv, mock_spec, _bal, _px):
+        mock_spec.return_value = {"lot_decimals": 8, "ordermin": "50", "costmin": "0.5"}
         mock_priv.return_value = {"txid": ["OABC-123"]}
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["LIVE_DATA_DIR"] = tmp
@@ -56,6 +58,9 @@ class KrakenExecutionTests(unittest.TestCase):
         self.assertEqual(out["status"], "submitted")
         self.assertEqual(out["txids"], ["OABC-123"])
         mock_priv.assert_called_once()
+        order = mock_priv.call_args[0][1]
+        self.assertNotIn("oflags", order)
+        self.assertEqual(order["volume"], "50")
 
     @patch("tradingagents.execution.kraken_spot.fetch_ticker_price", return_value=0.2)
     @patch("tradingagents.execution.kraken_spot.fetch_balances", return_value={"ZUSD": 1000.0})
