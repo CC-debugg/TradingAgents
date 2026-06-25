@@ -6,17 +6,39 @@ REPO="$(pwd)"
 echo "=== TradingAgents Kraken go-live helper ==="
 echo "Repo: $REPO"
 
-if [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
-  # shellcheck disable=SC1091
-  source "$HOME/miniconda3/etc/profile.d/conda.sh"
-elif [[ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]]; then
-  # shellcheck disable=SC1091
-  source "$HOME/anaconda3/etc/profile.d/conda.sh"
+_conda_sh=""
+for _c in "$HOME/miniconda3/etc/profile.d/conda.sh" \
+           "$HOME/anaconda3/etc/profile.d/conda.sh" \
+           "/opt/anaconda3/etc/profile.d/conda.sh" \
+           "/opt/miniconda3/etc/profile.d/conda.sh"; do
+  if [[ -f "$_c" ]]; then
+    _conda_sh="$_c"
+    break
+  fi
+done
+
+if [[ -z "$_conda_sh" ]]; then
+  echo "ERROR: conda not found. Install Anaconda or create env tradingagents (Python 3.12)." >&2
+  exit 1
 fi
-conda activate tradingagents 2>/dev/null || true
+# shellcheck disable=SC1090
+source "$_conda_sh"
+conda activate tradingagents
+
+PY="$(which python)"
+VER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+echo "Python: $PY ($VER)"
+if "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+  :
+else
+  echo "ERROR: need Python 3.10+ (tradingagents env). Got $VER from base anaconda?" >&2
+  echo "Try: conda create -n tradingagents python=3.12 -y && conda activate tradingagents" >&2
+  exit 1
+fi
 
 git pull
-python scripts/kraken_repair_env.py || python scripts/kraken_patch_live_env.py
+python scripts/kraken_repair_env.py || true
+python scripts/kraken_patch_live_env.py
 
 echo ""
 echo "--- KRAKEN settings (no secrets) ---"
@@ -32,7 +54,7 @@ python scripts/kraken_meme_live_loop.py --once --quick
 
 echo ""
 read -r -p "Start 24/7 loop? [y/N] " ans
-if [[ "${ans,,}" == "y" ]]; then
+if [[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]]; then
   mkdir -p logs
   pkill -f kraken_meme_live_loop.py 2>/dev/null || true
   nohup python scripts/kraken_meme_live_loop.py --interval 300 --quick >> logs/kraken_loop.log 2>&1 &
