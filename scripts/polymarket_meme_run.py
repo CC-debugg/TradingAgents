@@ -67,6 +67,12 @@ def run_whale_arb() -> int:
     return subprocess.call([sys.executable, script])
 
 
+def run_fifa_research() -> int:
+    script = os.path.join(REPO_ROOT, "scripts", "polymarket_fifa_research.py")
+    print("Running FIFA / World Cup Polymarket strategy scan + backtest ...\n")
+    return subprocess.call([sys.executable, script])
+
+
 def run_whale_strategy() -> int:
     script = os.path.join(REPO_ROOT, "scripts", "polymarket_whale_strategy.py")
     print("Running whale-flow strategy backtest (win rate + WFO) ...\n")
@@ -139,6 +145,7 @@ def main() -> int:
             "walkforward",
             "whale-arb",
             "whale-strategy",
+            "fifa-research",
             "multi-strategy",
             "daily-ops",
             "live-daily",
@@ -168,6 +175,9 @@ def main() -> int:
 
     if args.command == "whale-strategy":
         return run_whale_strategy()
+
+    if args.command == "fifa-research":
+        return run_fifa_research()
 
     if args.command == "multi-strategy":
         return run_multi_strategy()

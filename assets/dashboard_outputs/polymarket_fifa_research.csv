@@ -1,0 +1,25 @@
+slug,strategy,n_days,n_trades,win_rate,sharpe_full,return_full_pct,sharpe_oos_30d,return_oos_30d_pct,max_dd_pct,score,question,volume_usd,live_score
+will-usa-win-the-2026-fifa-world-cup-467,whale_flow_v2,310,28,0.275,1.556,52.21,5.139,15.16,-18.08,5.139,Will USA win the 2026 FIFA World Cup?,111263335.87960465,6.500835
+will-ivory-coast-win-the-2026-fifa-world-cup,whale_flow_v2,172,12,0.2,2.078,90.95,4.111,56.55,-0.35,4.111,Will Ivory Coast win the 2026 FIFA World Cup?,102217994.46771063,5.2004150000000005
+will-croatia-win-the-2026-fifa-world-cup,whale_flow_v2,192,27,0.1026,0.411,6.6,4.119,61.23,-39.15,4.119,Will Croatia win the 2026 FIFA World Cup?,88385651.96672043,4.73685
+will-belgium-win-the-2026-fifa-world-cup-358,whale_flow_v2,301,18,0.2368,1.213,54.46,2.021,19.33,-22.26,2.021,Will Belgium win the 2026 FIFA World Cup?,82322754.54611969,2.3241499999999995
+will-mexico-win-the-2026-fifa-world-cup-529,whale_flow_v2,314,16,0.2,0.409,10.33,1.834,17.05,-13.84,1.834,Will Mexico win the 2026 FIFA World Cup?,99668312.85769346,2.32001
+will-ecuador-win-the-2026-fifa-world-cup-986,whale_flow_v2,281,15,0.1515,1.602,174.21,4.551,142.92,-15.48,4.551,Will Ecuador win the 2026 FIFA World Cup?,91468717.67743592,2.01495525
+will-egypt-win-the-2026-fifa-world-cup,poly_shock_mr,183,37,0.2162,2.143,464.13,5.192,361.21,-28.57,5.192,Will Egypt win the 2026 FIFA World Cup?,90594421.93432638,1.99892
+will-morocco-win-the-2026-fifa-world-cup-464,poly_shock_mr,229,132,0.2803,-0.161,-71.18,1.778,18.17,-77.27,1.778,Will Morocco win the 2026 FIFA World Cup?,84008713.04187892,1.778
+will-mexico-win-the-2026-fifa-world-cup-529,poly_shock_mr,314,152,0.3026,0.265,-138.91,1.264,9.65,-138.99,1.264,Will Mexico win the 2026 FIFA World Cup?,99668312.85769346,1.3904
+will-morocco-win-the-2026-fifa-world-cup-464,whale_flow_v2,229,33,0.2059,-0.194,-31.75,1.17,6.07,-43.96,1.17,Will Morocco win the 2026 FIFA World Cup?,84008713.04187892,1.3455
+will-congo-dr-win-the-2026-fifa-world-cup,poly_shock_mr,72,20,0.2,2.919,792.83,3.699,398.25,-0.4,3.699,Will Congo DR win the 2026 FIFA World Cup?,88950123.12207165,1.2946499999999999
+will-canada-win-the-2026-fifa-world-cup-755,poly_shock_mr,304,129,0.2713,0.694,-11.45,0.97,-0.25,-83.09,-0.485,Will Canada win the 2026 FIFA World Cup?,89496411.6643388,0.97
+will-croatia-win-the-2026-fifa-world-cup,poly_shock_mr,192,82,0.2683,1.076,51.85,0.465,-0.45,-43.66,-0.232,Will Croatia win the 2026 FIFA World Cup?,88385651.96672043,0.465
+will-cape-verde-win-the-2026-fifa-world-cup,whale_flow_v2,188,12,0.0,-1.168,-66.87,0.0,0.0,-66.87,0.0,Will Cape Verde win the 2026 FIFA World Cup?,87320141.26490296,0.0
+will-canada-win-the-2026-fifa-world-cup-755,whale_flow_v2,304,4,0.1333,0.114,-9.01,-0.669,-22.93,-40.03,0.334,Will Canada win the 2026 FIFA World Cup?,89496411.6643388,-0.5385449999999999
+will-cape-verde-win-the-2026-fifa-world-cup,poly_shock_mr,188,20,0.2,0.663,-1257.34,-0.861,-377.64,-266.67,0.431,Will Cape Verde win the 2026 FIFA World Cup?,87320141.26490296,-0.861
+will-japan-win-the-2026-fifa-world-cup-112,poly_shock_mr,307,185,0.3622,1.456,293.65,-0.859,-40.32,-46.51,0.429,Will Japan win the 2026 FIFA World Cup?,91408829.26360983,-0.9449000000000001
+will-ivory-coast-win-the-2026-fifa-world-cup,poly_shock_mr,172,40,0.175,0.489,-4.53,-1.098,-44.69,-44.94,0.549,Will Ivory Coast win the 2026 FIFA World Cup?,102217994.46771063,-1.2078000000000002
+will-belgium-win-the-2026-fifa-world-cup-358,poly_shock_mr,301,156,0.2885,0.007,-57.07,-1.415,-16.51,-74.44,0.707,Will Belgium win the 2026 FIFA World Cup?,82322754.54611969,-1.415
+will-japan-win-the-2026-fifa-world-cup-112,whale_flow_v2,307,27,0.1429,-1.31,-63.84,-2.534,-35.66,-77.19,1.267,Will Japan win the 2026 FIFA World Cup?,91408829.26360983,-3.20551
+will-egypt-win-the-2026-fifa-world-cup,whale_flow_v2,183,8,0.0769,-1.073,-84.52,-2.641,-84.51,-88.93,1.321,Will Egypt win the 2026 FIFA World Cup?,90594421.93432638,-3.340865
+will-ecuador-win-the-2026-fifa-world-cup-986,poly_shock_mr,281,110,0.2727,0.089,-86.22,-4.479,-75.81,-88.04,2.24,Will Ecuador win the 2026 FIFA World Cup?,91468717.67743592,-4.926900000000001
+will-usa-win-the-2026-fifa-world-cup-467,poly_shock_mr,310,151,0.2914,-1.09,-98.38,-5.639,-73.65,-98.76,2.819,Will USA win the 2026 FIFA World Cup?,111263335.87960465,-6.2029000000000005
+will-congo-dr-win-the-2026-fifa-world-cup,whale_flow_v2,72,10,0.0,-2.593,-80.13,-6.122,-0.2,-80.13,3.061,Will Congo DR win the 2026 FIFA World Cup?,88950123.12207165,-7.040299999999999

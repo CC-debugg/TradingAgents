@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-06-29T11:19:06.808168-04:00",
+  "recommended_slug": "will-usa-win-the-2026-fifa-world-cup-467",
+  "recommended_strategy": "whale_flow_v2",
+  "question": "Will USA win the 2026 FIFA World Cup?",
+  "volume_usd": 111263335.87960465,
+  "oos_sharpe": 5.139,
+  "oos_return_pct": 15.16,
+  "live_env": {
+    "POLYMARKET_MARKET_SLUG": "will-usa-win-the-2026-fifa-world-cup-467",
+    "POLYMARKET_LIVE_NOTIONAL_USD": "50",
+    "LIVE_NOTIONAL_USD": "50",
+    "LIVE_MAX_TRADES": "3000"
+  },
+  "next_steps": [
+    "Fund Polymarket ~$50-100 USDC (Polygon)",
+    "Manual trade once + export private key",
+    "python scripts/polymarket_whale_strategy.py --slug will-usa-win-the-2026-fifa-world-cup-467",
+    "POLYMARKET_LIVE=1 after dry-run"
+  ]
+}
