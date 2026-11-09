@@ -22,22 +22,24 @@ def _parse_date(value: str) -> datetime:
 
 
 def resolve_market_slug(slug: str) -> dict | None:
-    """Return Gamma market metadata for a URL slug."""
+    """Return Gamma market metadata for a URL slug (open or resolved)."""
     slug = slug.strip()
     if not slug:
         return None
-    try:
-        r = requests.get(
-            f"{GAMMA_BASE}/markets",
-            params={"slug": slug, "limit": 1},
-            timeout=15,
-        )
-        r.raise_for_status()
-        markets = r.json()
-        if isinstance(markets, list) and markets:
-            return markets[0]
-    except Exception:
-        pass
+    # Gamma omits resolved markets unless closed=true is passed explicitly.
+    for extra in ({}, {"closed": "true"}):
+        try:
+            r = requests.get(
+                f"{GAMMA_BASE}/markets",
+                params={"slug": slug, "limit": 1, **extra},
+                timeout=15,
+            )
+            r.raise_for_status()
+            markets = r.json()
+            if isinstance(markets, list) and markets:
+                return markets[0]
+        except Exception:
+            continue
     return None
 
 

@@ -143,7 +143,8 @@ def _correlation_json(returns_map: dict[str, pd.Series], ids: list[str]) -> dict
     df = pd.DataFrame(cols).dropna(how="all").fillna(0)
     if len(df) < 20:
         return {}
-    return {a: {b: round(float(df.corr().loc[a, b]), 3) for b in df.columns} for a in df.columns}
+    corr = df.corr().fillna(0.0)
+    return {a: {b: round(float(corr.loc[a, b]), 3) for b in df.columns} for a in df.columns}
 
 
 def build_strategy_tab_results(

@@ -53,6 +53,39 @@ def fetch_top_holders(condition_id: str, limit: int = 20) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _resolve_condition_id(market_slug: str | None, condition_id: str | None) -> str | None:
+    if condition_id:
+        return condition_id
+    if not market_slug:
+        return None
+    meta = fetch_market_meta(market_slug)
+    if meta and meta.get("conditionId"):
+        return meta["conditionId"]
+    return DEFAULT_CONDITION_IDS.get(market_slug)
+
+
+def _fetch_trades_page(params: dict[str, Any], timeout: int = 25) -> tuple[list[dict], str | None]:
+    """One page of Data API v2 /trades (v1 was retired in 2026)."""
+    r = requests.get(f"{DATA_API}/v2/trades", params=params, timeout=timeout)
+    r.raise_for_status()
+    payload = r.json()
+    rows = payload.get("data") or []
+    cursor = (payload.get("pagination") or {}).get("next_cursor")
+    return (rows if isinstance(rows, list) else []), cursor
+
+
+def _trade_params(min_cash_usd: float, limit: int, cid: str | None) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "limit": limit,
+        "filter_type": "CASH",
+        "filter_amount": min_cash_usd,
+        "taker_only": "true",
+    }
+    if cid:
+        params["condition"] = cid
+    return params
+
+
 def fetch_large_trades(
     min_cash_usd: float = 500.0,
     limit: int = 100,
@@ -60,30 +93,13 @@ def fetch_large_trades(
     condition_id: str | None = None,
 ) -> pd.DataFrame:
     """Recent large trades (whale flow) from Data API."""
-    params: dict[str, Any] = {
-        "limit": min(limit, 500),
-        "filterType": "CASH",
-        "filterAmount": min_cash_usd,
-        "takerOnly": "true",
-    }
-    cid = condition_id
-    if market_slug and not cid:
-        meta = fetch_market_meta(market_slug)
-        if meta and meta.get("conditionId"):
-            cid = meta["conditionId"]
-    if cid:
-        params["market"] = cid
-
+    cid = _resolve_condition_id(market_slug, condition_id)
     try:
-        r = requests.get(f"{DATA_API}/trades", params=params, timeout=20)
-        r.raise_for_status()
-        trades = r.json()
+        trades, _ = _fetch_trades_page(_trade_params(min_cash_usd, min(limit, 1000), cid), timeout=20)
     except Exception:
         return pd.DataFrame()
-
-    if not isinstance(trades, list):
+    if not trades:
         return pd.DataFrame()
-
     return _normalize_trades(trades)
 
 
@@ -92,41 +108,25 @@ def fetch_large_trades_history(
     market_slug: str | None = None,
     condition_id: str | None = None,
     max_trades: int = 5000,
-    page_size: int = 500,
+    page_size: int = 1000,
 ) -> pd.DataFrame:
-    """Paginate Data API /trades for deeper history (newest → older)."""
-    cid = condition_id
-    if market_slug and not cid:
-        meta = fetch_market_meta(market_slug)
-        if meta and meta.get("conditionId"):
-            cid = meta["conditionId"]
+    """Cursor-paginate Data API v2 /trades for deeper history (newest → older)."""
+    cid = _resolve_condition_id(market_slug, condition_id)
+    params = _trade_params(min_cash_usd, min(page_size, 1000), cid)
 
     rows: list[dict] = []
-    offset = 0
-    page_size = min(page_size, 500)
-
+    cursor: str | None = None
     while len(rows) < max_trades:
-        params: dict[str, Any] = {
-            "limit": page_size,
-            "offset": offset,
-            "filterType": "CASH",
-            "filterAmount": min_cash_usd,
-            "takerOnly": "true",
-        }
-        if cid:
-            params["market"] = cid
+        page_params = dict(params)
+        if cursor:
+            page_params["cursor"] = cursor
         try:
-            r = requests.get(f"{DATA_API}/trades", params=params, timeout=25)
-            r.raise_for_status()
-            batch = r.json()
+            batch, cursor = _fetch_trades_page(page_params)
         except Exception:
             break
-        if not isinstance(batch, list) or not batch:
-            break
         rows.extend(batch)
-        if len(batch) < page_size:
+        if not cursor:
             break
-        offset += len(batch)
 
     if not rows:
         return pd.DataFrame()
@@ -144,17 +144,17 @@ def _normalize_trades(trades: list) -> pd.DataFrame:
         rows.append(
             {
                 "timestamp": pd.to_datetime(int(t.get("timestamp", 0)), unit="s", utc=True),
-                "wallet": t.get("proxyWallet", ""),
+                "wallet": t.get("proxy_wallet") or t.get("proxyWallet", ""),
                 "name": t.get("name") or t.get("pseudonym", ""),
                 "side": str(t.get("side", "")).upper(),
                 "price": price,
                 "size": size,
                 "cash_usd": price * size,
                 "outcome": t.get("outcome", ""),
-                "outcome_index": int(t.get("outcomeIndex", 0) or 0),
+                "outcome_index": int(t.get("outcome_index", t.get("outcomeIndex", 0)) or 0),
                 "slug": t.get("slug", ""),
                 "title": (t.get("title") or "")[:80],
-                "condition_id": t.get("conditionId", ""),
+                "condition_id": t.get("condition_id") or t.get("conditionId", ""),
             }
         )
     df = pd.DataFrame(rows)

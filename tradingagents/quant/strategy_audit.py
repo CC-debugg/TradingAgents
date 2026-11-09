@@ -158,7 +158,8 @@ def _avg_abs_corr_vs(ref_returns: pd.Series, target: pd.Series) -> float:
     df = pd.DataFrame({"ref": ref_returns, "tgt": target}).dropna()
     if len(df) < 20:
         return 0.0
-    return round(abs(float(df.corr().iloc[0, 1])), 3)
+    c = df.corr().iloc[0, 1]
+    return 0.0 if pd.isna(c) else round(abs(float(c)), 3)
 
 
 def _correlation_matrix(returns_map: dict[str, pd.Series], ids: list[str]) -> dict[str, dict[str, float]]:
@@ -168,7 +169,7 @@ def _correlation_matrix(returns_map: dict[str, pd.Series], ids: list[str]) -> di
     df = pd.DataFrame(cols).dropna(how="all").fillna(0)
     if len(df) < 20:
         return {}
-    corr = df.corr()
+    corr = df.corr().fillna(0.0)
     return {a: {b: round(float(corr.loc[a, b]), 3) for b in corr.columns} for a in corr.index}
 
 

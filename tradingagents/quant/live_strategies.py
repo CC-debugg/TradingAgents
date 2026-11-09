@@ -30,6 +30,16 @@ from tradingagents.quant.whale_strategy import (
 )
 
 DEFAULT_SLUG = "gta-vi-released-before-june-2026"
+POLY_CACHE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "data",
+    "polymarket_cache",
+)
+
+
+def live_market_slug() -> str:
+    """POLYMARKET_MARKET_SLUG from .env, else dashboard default (GTA)."""
+    return os.environ.get("POLYMARKET_MARKET_SLUG", "").strip() or DEFAULT_SLUG
 
 
 def _max_trades() -> int:
@@ -55,6 +65,17 @@ def _prob_from_trades(trades: pd.DataFrame) -> pd.Series:
     return prob.dropna()
 
 
+def _load_cached_trades(slug: str) -> pd.DataFrame:
+    """Frozen large-trade history for resolved markets (API fallback)."""
+    path = os.path.join(POLY_CACHE_DIR, f"{slug}_trades.csv")
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    trades = pd.read_csv(path)
+    trades["timestamp"] = pd.to_datetime(trades["timestamp"], utc=True)
+    trades["outcome"] = trades["outcome"].fillna("").astype(str)
+    return trades
+
+
 def _clean_returns(out: dict[str, pd.Series]) -> dict[str, pd.Series]:
     cleaned: dict[str, pd.Series] = {}
     for k, s in out.items():
@@ -72,9 +93,10 @@ def _clean_returns(out: dict[str, pd.Series]) -> dict[str, pd.Series]:
 def fetch_live_data_bundle(
     start: str,
     end: str,
-    slug: str = DEFAULT_SLUG,
+    slug: str | None = None,
 ) -> dict:
     """Single network pass shared by strategy tabs and execution snapshot."""
+    slug = slug or live_market_slug()
     errors: dict[str, str] = {}
     cfg = StrategyConfig(start=start, end=end)
 
@@ -105,12 +127,23 @@ def fetch_live_data_bundle(
     except Exception as exc:
         errors["trades"] = str(exc)
 
+    resolved = bool(meta.get("closed"))
+    if trades.empty:
+        cached = _load_cached_trades(slug)
+        if len(cached):
+            trades = cached
+            resolved = True
+            errors.pop("trades", None)
+
     poly = pd.Series(dtype=float)
-    try:
-        ohlcv = fetch_polymarket_daily_ohlcv(slug, start, end)
-        poly = ohlcv["Close"].dropna() if not ohlcv.empty else pd.Series(dtype=float)
-    except Exception as exc:
-        errors["ohlcv"] = str(exc)
+    # Resolved markets: CLOB mids collapse to sub-cent ticks near expiry, so price the
+    # sleeve off ≥$500 executed trades instead (the series all published metrics use).
+    if not resolved:
+        try:
+            ohlcv = fetch_polymarket_daily_ohlcv(slug, start, end)
+            poly = ohlcv["Close"].dropna() if not ohlcv.empty else pd.Series(dtype=float)
+        except Exception as exc:
+            errors["ohlcv"] = str(exc)
 
     if poly.empty and not trades.empty:
         try:
@@ -143,9 +176,10 @@ def fetch_live_data_bundle(
 def collect_strategy_returns(
     start: str,
     end: str,
-    slug: str = DEFAULT_SLUG,
+    slug: str | None = None,
     bundle: dict | None = None,
 ) -> tuple[dict[str, pd.Series], dict[str, str]]:
+    slug = slug or live_market_slug()
     if bundle is None:
         bundle = fetch_live_data_bundle(start, end, slug)
 
@@ -216,7 +250,7 @@ def collect_strategy_returns(
 def latest_signals(cfg: StrategyConfig, prices: dict[str, pd.Series], poly: pd.Series) -> dict[str, float]:
     from tradingagents.quant.live_execution import build_live_execution_snapshot
 
-    slug = DEFAULT_SLUG
+    slug = live_market_slug()
     meta = fetch_market_meta(slug) or {}
     cid = meta.get("conditionId") or DEFAULT_CONDITION_IDS.get(slug, "")
     trades = fetch_large_trades_history(
