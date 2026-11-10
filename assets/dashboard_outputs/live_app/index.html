@@ -495,7 +495,9 @@
               ? "MACRO OFF"
               : s === "gated"
                 ? "GATED"
-                : "FLAT";
+                : s === "resolved"
+                  ? "RESOLVED"
+                  : "FLAT";
       return '<span class="pill ' + s + '">' + label + "</span>";
     }
 
@@ -648,6 +650,66 @@
         '<table class="flow-table"><thead><tr><th>Date</th><th>#</th><th>Yes $</th><th>No $</th><th>Net $</th></tr></thead><tbody>' +
         (rows || "<tr><td colspan='5'>No daily flow</td></tr>") +
         "</tbody></table></div></div></div>"
+      );
+    }
+
+    function renderWhaleMonitor(mon) {
+      if (!mon || !mon.ok) return "";
+      const d = mon.detail || {};
+      const usd = function (v) {
+        return v != null ? "$" + Math.round(v).toLocaleString() : "—";
+      };
+      const daily = (d.daily_flow || [])
+        .map(function (r) {
+          return "<tr><td>" + r.date + "</td><td>" + (r.n_trades || 0) + "</td><td>" + usd(r.flow_yes_usd) +
+            "</td><td>" + usd(r.flow_no_usd) + "</td><td>" + usd(r.flow_net_usd) + "</td></tr>";
+        })
+        .join("");
+      const trades = (mon.recent_trades || [])
+        .map(function (t) {
+          const color = t.side === "BUY" ? "#00ff88" : "#ff4466";
+          return "<tr><td>" + t.time_utc + "</td><td style='color:" + color + "'>" + t.side + "</td><td>" +
+            t.outcome + "</td><td>" + (t.price != null ? t.price.toFixed(3) : "—") + "</td><td>" +
+            usd(t.cash_usd) + "</td><td>" + (t.trader || "") + "</td></tr>";
+        })
+        .join("");
+      return (
+        '<div class="card"><h2>Live whale monitor · <a href="' + mon.url + '" target="_blank" rel="noopener">' +
+        mon.question + "</a></h2>" +
+        '<p class="desc">As of <b>' + mon.as_of_utc + "</b> · resolves " + mon.end_date +
+        " (" + mon.days_to_resolution + "d) · lifetime volume " + usd(mon.volume_usd) +
+        " · 24h " + usd(mon.volume_24h_usd) + "</p>" +
+        '<p class="desc"><i>Market selection: ' + mon.selection_rule + "</i></p>" +
+        '<div class="stats" style="margin:8px 0">' +
+        "<span>Yes prob <b>" + (mon.yes_prob != null ? (mon.yes_prob * 100).toFixed(1) + "%" : "—") + "</b></span>" +
+        "<span>Signal <b>" + fmtNum(d.signal, 2) + "</b></span>" +
+        "<span>7d net flow <b>" + usd(d.flow_net_usd) + "</b></span>" +
+        "<span>Large trades (7d) <b>" + (d.n_trades != null ? d.n_trades : "—") + "</b></span>" +
+        "<span>Max trade <b>" + usd(d.max_trade_usd) + "</b></span>" +
+        "<span>Trend <b>" + (d.trend || "—") + "</b></span>" +
+        "</div>" +
+        renderChecks(d.checks) +
+        '<div class="whale-grid" style="margin-top:8px">' +
+        "<div><h3>Daily whale flow (last " + (d.flow_window_days || 7) + " days)</h3>" +
+        '<table class="flow-table"><thead><tr><th>Date</th><th>#</th><th>Yes $</th><th>No $</th><th>Net $</th></tr></thead><tbody>' +
+        (daily || "<tr><td colspan='5'>No large trades</td></tr>") + "</tbody></table></div>" +
+        "<div><h3>Latest large trades (≥ " + usd(mon.min_trade_usd) + ")</h3>" +
+        '<table class="flow-table"><thead><tr><th>Time (UTC)</th><th>Side</th><th>Outcome</th><th>Price</th><th>Size</th><th>Trader</th></tr></thead><tbody>' +
+        (trades || "<tr><td colspan='6'>No large trades</td></tr>") + "</tbody></table></div>" +
+        "</div></div>"
+      );
+    }
+
+    function renderBacktestMarketNote(id) {
+      const bt = payload.whale_backtest_market || {};
+      if (!["whale_flow", "poly_mean_reversion"].includes(id) || !bt.slug) return "";
+      return (
+        '<p class="desc">Backtest sample: <b>' + bt.slug + "</b>" +
+        (bt.resolved ? " · <b>resolved</b>" : "") +
+        " · " + (bt.history_start || "—") + " → " + (bt.history_end || "—") +
+        " · " + (bt.n_large_trades || 0).toLocaleString() + " large trades." +
+        (payload.whale_monitor && payload.whale_monitor.ok ? " Live signal: see <b>Live whale monitor</b> below." : "") +
+        "</p>"
       );
     }
 
@@ -1021,6 +1083,9 @@
       const raw = payload.signals_raw || {};
       const gate = payload.news_gate || {};
       const whale = payload.whale_live || {};
+      const monitor = payload.whale_monitor || {};
+      const liveWhale = monitor.ok && monitor.detail ? monitor.detail : whale;
+      const polyCard = (payload.assets_live || [])[0] || {};
       const pairs = payload.pairs_live || {};
       const reasons = payload.gate_reason || {};
       const news = payload.news || {};
@@ -1070,6 +1135,7 @@
         '<p class="desc"><i>' +
         s.reference +
         "</i></p>" +
+        renderBacktestMarketNote(id) +
         '<div class="stats">' +
         "<span>Win rate <b>" +
         fmtPct(m.win_rate) +
@@ -1125,7 +1191,7 @@
             "<li><b>Pairs</b>: |z|>2 → DOGE/WIF spread trade.</li>" +
             "<li><b>Regime</b>: Bridgewater/BlackRock + Ang&JPM tilt whale/pairs weights.</li>" +
             "<li>Use <b>Live composite</b> tab for the book we send to CLOB.</li></ol></div>" +
-            renderWhaleDetail(whale) +
+            (renderWhaleMonitor(payload.whale_monitor) || renderWhaleDetail(whale)) +
             '<div class="card"><h2>Pairs · detail</h2>' +
             '<div class="stats">' +
             "<span>z <b>" + (pairs.spread_z != null ? pairs.spread_z : "—") + "</b></span>" +
@@ -1139,16 +1205,17 @@
             "<p>Macro gate <code style='color:" + gateColor + "'>" +
             (gate.label || "—") + " · score " + (gate.score != null ? gate.score : "—") +
             "</code></p>" +
-            "<p>Whale v2 <code>" + (whale.signal != null ? whale.signal : "—") +
-            "</code> · 7d flow $" + (whale.flow_net_usd != null ? Math.round(whale.flow_net_usd).toLocaleString() : "—") +
-            " · vol $" + (whale.volume_usd != null ? Math.round(whale.volume_usd).toLocaleString() : "—") +
-            " · trades " + (whale.n_trades != null ? whale.n_trades : "—") + "</p>" +
+            "<p>Whale v2" + (liveWhale !== whale ? " (live monitor)" : "") + " <code>" +
+            (liveWhale.signal != null ? liveWhale.signal : "—") +
+            "</code> · 7d flow $" + (liveWhale.flow_net_usd != null ? Math.round(liveWhale.flow_net_usd).toLocaleString() : "—") +
+            " · vol $" + (liveWhale.volume_usd != null ? Math.round(liveWhale.volume_usd).toLocaleString() : "—") +
+            " · trades " + (liveWhale.n_trades != null ? liveWhale.n_trades : "—") + "</p>" +
             "<p>Pairs z <code>" + (pairs.spread_z != null ? pairs.spread_z : "—") +
             "</code> · DOGE/WIF " + (pairs.doge_price != null ? "$" + pairs.doge_price : "—") +
             " / " + (pairs.wif_price != null ? "$" + pairs.wif_price : "—") + "</p>" +
-            "<p><b>After gate:</b> POLY <code>" + (sig.POLY_GTA != null ? sig.POLY_GTA : "—") +
-            "</code> (raw " + (raw.POLY_GTA != null ? raw.POLY_GTA : "—") +
-            ", " + (reasons.POLY_GTA || "") + ") · DOGE <code>" +
+            "<p><b>After gate:</b> POLY <code>" + (polyCard.signal_gated != null ? polyCard.signal_gated : "—") +
+            "</code> (raw " + (polyCard.signal_raw != null ? polyCard.signal_raw : "—") +
+            ", " + (polyCard.gate_reason || "") + ") · DOGE <code>" +
             (sig.DOGE != null ? sig.DOGE : "—") + "</code> · WIF <code>" +
             (sig.WIF != null ? sig.WIF : "—") + "</code></p>" +
             "<p class='desc'>Production sleeve: " +

@@ -167,6 +167,7 @@ def fetch_live_data_bundle(
         "poly": poly,
         "flow": flow,
         "errors": errors,
+        "resolved": resolved,
         "slug": slug,
         "start": start,
         "end": end,

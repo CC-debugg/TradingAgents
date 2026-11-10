@@ -26,6 +26,7 @@ from tradingagents.quant.all_weather_regime import (
 from tradingagents.quant.hf_manager import BASE_SLEEVE_IDS, equal_weight_allocation, equal_weight_returns, hf_manager_returns
 from tradingagents.quant.live_execution import build_live_execution_snapshot
 from tradingagents.quant.live_trade_history import build_trade_history_payload
+from tradingagents.quant.news_gate import apply_news_gate
 from tradingagents.quant.live_portfolio_sim import portfolio_pnl_snapshot, sim_capital, sim_start_date
 from tradingagents.quant.live_strategies import collect_strategy_returns, fetch_live_data_bundle
 from tradingagents.quant.regime_allocator import blend_returns, regime_dynamic_weights
@@ -34,6 +35,7 @@ from tradingagents.quant.strategy_audit import build_strategy_audit
 from tradingagents.quant.strategy_walk_forward import walk_forward_returns
 from tradingagents.quant.strategy_catalog import DASHBOARD_VERSION, STRATEGY_CATALOG, StrategySpec
 from tradingagents.quant.trading_costs import ROUND_TRIP_BPS
+from tradingagents.quant.whale_monitor import SELECTION_RULE, build_whale_monitor
 from tradingagents.quant.whale_strategy import daily_whale_flow, strategy_metrics
 
 NY = ZoneInfo("America/New_York")
@@ -189,10 +191,58 @@ def _spot_snapshot(series: pd.Series | None, unit: str = "USD") -> dict:
     }
 
 
+def _safe_whale_monitor() -> dict:
+    try:
+        return build_whale_monitor()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "selection_rule": SELECTION_RULE}
+
+
+def _backtest_market_note(bundle: dict, slug: str) -> dict:
+    poly = bundle.get("poly", pd.Series(dtype=float))
+    trades = bundle.get("trades", pd.DataFrame())
+    return {
+        "slug": slug,
+        "resolved": bool(bundle.get("resolved")),
+        "history_start": str(poly.index.min().date()) if len(poly) else None,
+        "history_end": str(poly.index.max().date()) if len(poly) else None,
+        "n_large_trades": int(len(trades)),
+    }
+
+
+def _monitor_asset_card(monitor: dict, gate: dict, status_fn) -> dict:
+    detail = monitor.get("detail") or {}
+    raw_sig = float(detail.get("signal") or 0.0)
+    gated_sig, reason = apply_news_gate(raw_sig, gate)
+    blocks = [c["label"] for c in detail.get("checks", []) if not c.get("ok")]
+    yes = monitor.get("yes_prob")
+    daily = detail.get("daily_flow") or []
+    return {
+        "id": "POLY_LIVE",
+        "name": monitor.get("question") or monitor.get("slug"),
+        "venue": "Polymarket CLOB · live whale monitor",
+        "slug": monitor.get("slug"),
+        "price": yes,
+        "price_pct": round(yes * 100, 2) if yes is not None else None,
+        "price_label": "Yes implied prob",
+        "as_of": monitor.get("as_of_utc"),
+        "chg_1d_pct": None,
+        "signal_raw": raw_sig,
+        "signal_gated": gated_sig,
+        "gate_reason": reason,
+        "sleeve": "whale_flow v2 (live monitor)",
+        "trade_when": "7d net whale flow ≥ $12k, ≥4 large trades, EMA trend agrees",
+        "status": status_fn(raw_sig, gated_sig, blocks),
+        "blocking": blocks,
+        "data_through": detail.get("trades_through") or (daily[-1]["date"] if daily else None),
+    }
+
+
 def _build_assets_live(
     bundle: dict,
     exec_snap: dict,
     slug: str,
+    whale_monitor: dict | None = None,
 ) -> list[dict]:
     """Per-asset live prices, signals, and when-we-trade hints."""
     poly = bundle.get("poly", pd.Series(dtype=float))
@@ -223,10 +273,13 @@ def _build_assets_live(
             return "wait"
         return "flat"
 
-    return [
-        {
+    resolved = bool(bundle.get("resolved"))
+    if whale_monitor and whale_monitor.get("ok"):
+        poly_card = _monitor_asset_card(whale_monitor, gate, _status)
+    else:
+        poly_card = {
             "id": "POLY_GTA",
-            "name": "Polymarket GTA",
+            "name": "Polymarket GTA" + (" · resolved (backtest market)" if resolved else ""),
             "venue": "Polymarket CLOB",
             "slug": slug,
             "price": poly_snap.get("price"),
@@ -239,10 +292,15 @@ def _build_assets_live(
             "gate_reason": reasons.get("POLY_GTA", ""),
             "sleeve": "whale_flow v2",
             "trade_when": "7d net whale flow ≥ $12k, ≥4 large trades, EMA trend agrees",
-            "status": _status(float(raw.get("POLY_GTA", 0)), float(sig.get("POLY_GTA", 0)), whale_blocks),
-            "blocking": whale_blocks,
+            "status": "resolved" if resolved else _status(
+                float(raw.get("POLY_GTA", 0)), float(sig.get("POLY_GTA", 0)), whale_blocks
+            ),
+            "blocking": [] if resolved else whale_blocks,
             "data_through": whale.get("trades_through") or poly_snap.get("as_of"),
-        },
+        }
+
+    return [
+        poly_card,
         {
             "id": "DOGE",
             "name": "Dogecoin",
@@ -321,7 +379,8 @@ def build_live_payload(
         notional_usd=100.0,
         trades=bundle.get("trades"),
     )
-    assets_live = _build_assets_live(bundle, exec_snap, slug)
+    whale_monitor = _safe_whale_monitor()
+    assets_live = _build_assets_live(bundle, exec_snap, slug, whale_monitor)
     trade_history = build_trade_history_payload(bundle, exec_snap, as_of, persist=True)
     sig = exec_snap["signals"]
     intents = exec_snap["clob_intents"]
@@ -503,6 +562,8 @@ def build_live_payload(
         "signals": {k: float(v) for k, v in sig.items()},
         "signals_raw": {k: float(v) for k, v in exec_snap["signals_raw"].items()},
         "whale_live": exec_snap["whale"],
+        "whale_monitor": whale_monitor,
+        "whale_backtest_market": _backtest_market_note(bundle, slug),
         "pairs_live": exec_snap["pairs"],
         "news_gate": news_gate,
         "gate_reason": exec_snap["gate_reason"],
